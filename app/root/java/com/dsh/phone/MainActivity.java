@@ -76,7 +76,7 @@ public class MainActivity extends WizardActivity {
         log("开始安装 DSH（首次需联网下载依赖，可能耗时数分钟）…");
         String escKey = shq(apiKey);
         ShRoot.Result setup = ShRoot.execAs(uid,
-            "env DEEPSEEK_API_KEY=" + escKey + " bash " + HOME + "/setup-root.sh",
+            "env DEEPSEEK_API_KEY=" + escKey + " " + PREFIX + "/bin/bash " + HOME + "/setup-root.sh",
             30 * 60 * 1000);
         String setupOut = setup.out;
         if (setupOut.length() > 40000) setupOut = setupOut.substring(setupOut.length() - 40000);
@@ -175,7 +175,7 @@ public class MainActivity extends WizardActivity {
             + "iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to-destination 127.0.0.1:53", 15000);
         ShRoot.exec("ip -6 route replace local fe80::5/128 dev lo 2>/dev/null", 10000);
         log("启动 DSH web（Termux 身份）…");
-        ShRoot.execAs(uid, "setsid bash " + HOME + "/start-dsh.sh >/dev/null 2>&1 &", 8000);
+        ShRoot.execAs(uid, "setsid " + PREFIX + "/bin/bash " + HOME + "/start-dsh.sh >/dev/null 2>&1 &", 8000);
     }
 
     private void pollDsh(int timeoutMs) throws Exception {
