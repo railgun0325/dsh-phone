@@ -213,6 +213,23 @@ public class MainActivity extends WizardActivity {
         log("[tip] 若重启后桥连不上：打开一次本 App，并在系统设置里允许 DSH Phone 自启动/后台无限制");
     }
 
+    /** Lightweight restart (same as the start step of doDeploy; no reinstall). */
+    @Override
+    protected void resumeDsh() throws Exception {
+        if (!ShizukuExec.binderReady()) {
+            throw new Exception("Shizuku 服务不可用，请点部署重新初始化");
+        }
+        ShizukuExec.Result tr = runAs("test -x /data/data/com.termux/files/usr/bin/sh && echo READY", 20000);
+        if (!tr.out.contains("READY")) {
+            throw new Exception("Termux 环境不可用，请点部署重新初始化");
+        }
+        String startCmd = "cd " + TERMUX_HOME + " && setsid " + TERMUX_BASH + " " + TERMUX_HOME + "/start-dsh.sh >/dev/null 2>&1 < /dev/null &";
+        runAs(startCmd, 20000);
+        if (!tcpReady(3080, 60000)) {
+            throw new Exception("DSH 启动超时，请点部署重试");
+        }
+    }
+
     // ---- helpers ----
 
     private void pmInstall(File apk) throws Exception {

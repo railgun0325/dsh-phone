@@ -99,6 +99,21 @@ public class MainActivity extends WizardActivity {
         pollDsh(60000);
     }
 
+    /** Lightweight restart of an already-deployed DSH (no reinstall). */
+    @Override
+    protected void resumeDsh() throws Exception {
+        if (!ShRoot.available()) {
+            throw new Exception("未检测到 root，请点部署重新初始化");
+        }
+        String uid = termuxUid();
+        if (!shReady(uid)) {
+            throw new Exception("Termux 环境不可用，请点部署重新初始化");
+        }
+        log("Termux 环境正常，拉起 DNS 转发与 DSH 服务…");
+        startServices(uid);
+        pollDsh(45000);
+    }
+
     // ---- helpers -----------------------------------------------------------
 
     private static String shq(String s) {
@@ -165,8 +180,8 @@ public class MainActivity extends WizardActivity {
 
     private void startServices(String uid) throws Exception {
         log("启动 DNS 转发（root，监听 53）…");
-        ShRoot.exec("setsid env LD_LIBRARY_PATH=" + PREFIX + "/lib " + PREFIX + "/bin/node " + HOME
-            + "/dns-fwd.mjs >/data/local/tmp/dns-fwd.log 2>&1 &", 8000);
+        ShRoot.exec("pgrep -f dns-fwd.mjs >/dev/null 2>&1 || (setsid env LD_LIBRARY_PATH=" + PREFIX + "/lib "
+            + PREFIX + "/bin/node " + HOME + "/dns-fwd.mjs >/data/local/tmp/dns-fwd.log 2>&1 &)", 8000);
         Thread.sleep(2000);
         log("配置 iptables DNS 重定向…");
         ShRoot.exec("iptables -t nat -D OUTPUT -p udp --dport 53 -j DNAT --to-destination 127.0.0.1:53 2>/dev/null; "

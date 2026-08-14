@@ -39,14 +39,24 @@ public class WebActivity extends Activity {
         web.setWebChromeClient(new WebChromeClient());
         web.loadUrl(DSH_URL);
         setContentView(web);
+
+        // Android 13+: predictive back replaces onBackPressed.
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                new android.window.OnBackInvokedCallback() {
+                    @Override
+                    public void onBackInvoked() {
+                        moveTaskToBack(true);
+                    }
+                });
+        }
     }
 
+    // Back / swipe-back goes home instead of falling back to the deploy
+    // wizard; the shell stays in the task and next launch resumes it.
     @Override
     public void onBackPressed() {
-        if (web != null && web.canGoBack()) {
-            web.goBack();
-        } else {
-            super.onBackPressed();
-        }
+        moveTaskToBack(true);
     }
 }

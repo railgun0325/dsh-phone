@@ -27,6 +27,7 @@ import android.widget.TextView;
 public abstract class WizardActivity extends Activity {
     private static final String PREFS = "dsh_phone";
     private static final String KEY_API = "api_key";
+    private static final String KEY_DEPLOYED = "deployed";
 
     protected TextView statusView;
     protected TextView logView;
@@ -43,6 +44,14 @@ public abstract class WizardActivity extends Activity {
 
     /** WebView shell activity, opened automatically once DSH is reachable. */
     protected abstract Class<?> shellActivityClass();
+
+    /** Bring a previously-deployed DSH back up (lightweight, no reinstall).
+     *  Throwing reports failure; the wizard then offers a full redeploy. */
+    protected abstract void resumeDsh() throws Exception;
+
+    protected boolean isDeployed() {
+        return "1".equals(prefs().getString(KEY_DEPLOYED, null));
+    }
 
     protected SharedPreferences prefs() {
         return getSharedPreferences(PREFS, MODE_PRIVATE);
@@ -84,7 +93,14 @@ public abstract class WizardActivity extends Activity {
         keyInput = Ui.edit(this, "粘贴你的 DeepSeek API Key", true);
         // Prefill the key stored after the first successful deploy.
         String saved = prefs().getString(KEY_API, null);
-        if (saved != null && !saved.isEmpty()) keyInput.setText(saved);
+        if (saved != null && !saved.isEmpty()) {
+            if (saved.startsWith("sk-")) {
+                keyInput.setText(saved);
+            } else {
+                // Stale/garbage value (e.g. an accidental paste): drop it.
+                prefs().edit().remove(KEY_API).apply();
+            }
+        }
         root.addView(keyInput, lp());
         TextView keyHint = Ui.text(this, "Key 只保存在本机 App 与 Termux 环境里，不内置、不上传、不进安装包。", 11, false);
         keyHint.setTextColor(Color.parseColor("#888888"));
@@ -109,10 +125,16 @@ public abstract class WizardActivity extends Activity {
 
         setContentView(root);
 
-        // If DSH is already running (e.g. after a reboot + Termux:Boot), skip the
-        // wizard entirely and go straight to the shell.
+        // DSH already running? Straight to the shell — never show the wizard
+        // again once it has been deployed.
         if (dshReachable(1500)) {
             openShell();
+            return;
+        }
+        // Deployed before but DSH is down (killed by MIUI, reboot without
+        // boot-persistence, ...): restart it quietly instead of reinstalling.
+        if (isDeployed()) {
+            autoResume();
         }
     }
 
@@ -152,6 +174,39 @@ public abstract class WizardActivity extends Activity {
         return deploying;
     }
 
+    /** Quietly bring DSH back up after a successful earlier deploy. */
+    private void autoResume() {
+        if (deploying) return;
+        deploying = true;
+        deployBtn.setEnabled(false);
+        log("检测到已部署，正在启动 DSH（无需重新安装）…");
+        setStatus("正在启动 DSH…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                boolean ok = false;
+                try {
+                    resumeDsh();
+                    ok = true;
+                    setStatus("DSH 已启动，正在打开界面…");
+                } catch (Exception e) {
+                    log("[error] DSH 启动失败：" + (e.getMessage() == null ? e.toString() : e.getMessage()));
+                    log("[hint] 如果多次失败，点下面的“一键部署”可完整修复。");
+                    setStatus("DSH 启动失败，可点部署修复");
+                } finally {
+                    deploying = false;
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            deployBtn.setEnabled(true);
+                        }
+                    });
+                }
+                if (ok) openShell();
+            }
+        }, "dsh-resume").start();
+    }
+
     private void startDeploy() {
         if (deploying) return;
         final String key = keyInput.getText().toString().trim();
@@ -174,8 +229,11 @@ public abstract class WizardActivity extends Activity {
                 boolean ok = false;
                 try {
                     doDeploy(key);
-                    // First successful deploy persists the key locally (device-only).
-                    prefs().edit().putString(KEY_API, key).apply();
+                    // Successful deploy: remember state + key (device-only).
+                    prefs().edit().putString(KEY_DEPLOYED, "1").apply();
+                    if (key.startsWith("sk-")) {
+                        prefs().edit().putString(KEY_API, key).apply();
+                    }
                     ok = true;
                     setStatus("部署完成，正在打开界面…");
                 } catch (Exception e) {
