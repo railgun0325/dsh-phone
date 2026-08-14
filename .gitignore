@@ -11,3 +11,4 @@ dist/
 assets/
 app/*/out/
 app/*/build/
+out-release/
