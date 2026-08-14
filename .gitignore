@@ -8,3 +8,6 @@ out/
 classes/
 dist/
 .DS_Store
+assets/
+app/*/out/
+app/*/build/

@@ -7,6 +7,7 @@
 
 import { execFile, execFileSync } from 'node:child_process'
 import { promisify } from 'node:util'
+import { readFileSync } from 'node:fs'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const name = 'android-control'
@@ -40,7 +41,62 @@ function resolveSu() {
   return undefined
 }
 
-/** Run one command on the device. root=true routes through su; never throws. */
+/** Shizuku bridge: local HTTP endpoint served by the DSH Phone app's daemon UserService.
+ *  The token is written to ~/.dsh-bridge-token during one-tap deployment. */
+const BRIDGE_PORT = 36527
+let bridgeConfig = undefined
+let bridgeChecked = false
+
+function bridgeTarget() {
+  if (bridgeChecked) return bridgeConfig
+  bridgeChecked = true
+  const candidates = [
+    process.env.HOME ? process.env.HOME + '/.dsh-bridge-token' : null,
+    '/data/data/com.termux/files/home/.dsh-bridge-token',
+  ]
+  let token = undefined
+  for (const p of candidates) {
+    if (!p) continue
+    try { token = readFileSync(p, 'utf8').trim() } catch { token = '' }
+    if (token) break
+  }
+  if (!token) return undefined
+  bridgeConfig = { url: 'http://127.0.0.1:' + BRIDGE_PORT + '/exec', token }
+  return bridgeConfig
+}
+
+/** Run one command through the Shizuku bridge (unrooted devices). */
+async function runViaBridge(cmd, timeoutMs, signal) {
+  const bridge = bridgeTarget()
+  if (!bridge) {
+    return { ok: false, code: -1, stdout: '', stderr: 'root requested but no su and no Shizuku bridge (missing ~/.dsh-bridge-token)', root: false }
+  }
+  try {
+    const res = await fetch(bridge.url, {
+      method: 'POST',
+      headers: {
+        'x-dsh-token': bridge.token,
+        'x-dsh-cmd': cmd,
+        'x-dsh-timeout-ms': String(timeoutMs),
+      },
+      signal,
+    })
+    const body = await res.json().catch(() => ({}))
+    return {
+      ok: body.exitCode === 0,
+      code: typeof body.exitCode === 'number' ? body.exitCode : -1,
+      stdout: String(body.stdout ?? ''),
+      stderr: String(body.stderr ?? ''),
+      root: false,
+      bridge: true,
+    }
+  } catch (err) {
+    return { ok: false, code: -1, stdout: '', stderr: 'bridge call failed: ' + (err && err.message ? err.message : err), root: false, bridge: true }
+  }
+}
+
+/** Run one command on the device. root=true routes through su (or the Shizuku bridge
+ *  when the device is not rooted); never throws. */
 async function run(cmd, options) {
   const opts = options ?? {}
   const root = opts.root !== false
@@ -48,7 +104,7 @@ async function run(cmd, options) {
   const signal = opts.signal
   const su = root ? resolveSu() : undefined
   if (root && su === undefined) {
-    return { ok: false, code: -1, stdout: '', stderr: 'root requested but no su binary found; device may not be rooted', root: false }
+    return runViaBridge(cmd, timeout, signal)
   }
   const file = root ? su : 'sh'
   try {
@@ -105,7 +161,8 @@ export function apply(ctx) {
   ctx.tools.register(defineTool({
     name: 'android_shell',
     description:
-      'Run one shell command on the Android device through the Termux shell or Magisk root (su). '
+      'Run one shell command on the Android device. On rooted devices this goes through Magisk su; '
+      + 'on unrooted devices it goes through the DSH Phone Shizuku bridge (adb-shell level). '
       + 'This is the general escape hatch for anything the dedicated android_* tools do not cover: '
       + 'file ops, settings, pm/am/dumpsys calls, appops, service control, etc. '
       + 'Returns exit code, stdout and stderr. Defaults to root=true; use root=false for plain termux commands.',
@@ -136,14 +193,16 @@ export function apply(ctx) {
     async execute(args, exec) {
       const name = args.filename ?? 'screen-' + Date.now() + '.png'
       const path = SHOTS_DIR + '/' + name
-      const mkdir = 'mkdir -p ' + shq(SHOTS_DIR)
+      // 755 dir + 644 file so the PNG stays readable by Termux even when the
+      // Shizuku bridge (shell uid) creates it under /data/local/tmp.
+      const mkdir = 'mkdir -p ' + shq(SHOTS_DIR) + ' && chmod 755 ' + shq(SHOTS_DIR)
       // Some MIUI builds fail to link screencap against libunwindstack symbols
       // (Xzs_*); retrying with these preloads fixes the linker error.
       const preload = 'env LD_PRELOAD=/system/lib64/liblzma.so:/system/lib64/libz.so '
-      const try1 = mkdir + ' && screencap -p ' + shq(path)
+      const try1 = mkdir + ' && screencap -p ' + shq(path) + ' && chmod 644 ' + shq(path)
       let res = await run(try1, { timeout: 25000, signal: exec.signal })
       if (!res.ok) {
-        const try2 = mkdir + ' && ' + preload + 'screencap -p ' + shq(path)
+        const try2 = mkdir + ' && ' + preload + 'screencap -p ' + shq(path) + ' && chmod 644 ' + shq(path)
         res = await run(try2, { timeout: 25000, signal: exec.signal })
       }
       return res.ok ? { ok: true, path } : { ok: false, error: res.stderr.trim() || 'screencap failed' }
