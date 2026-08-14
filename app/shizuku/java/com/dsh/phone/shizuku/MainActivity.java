@@ -90,6 +90,7 @@ public class MainActivity extends WizardActivity {
         log("[4/12] token 已写入 files/bridge-token");
 
         // start bridge foreground service early
+        requestNotificationPermission();
         log("  启动本地桥前台服务（127.0.0.1:36527）…");
         BridgeService.start(this);
 
@@ -223,6 +224,20 @@ public class MainActivity extends WizardActivity {
             return true;
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        try {
+                            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 9002);
+                        } catch (Throwable ignored) {}
+                    }
+                });
+            }
         }
     }
 

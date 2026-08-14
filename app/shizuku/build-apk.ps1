@@ -29,7 +29,8 @@ $env:PATH = (Join-Path $jdk 'bin') + ';' + $env:PATH
 # --- 0. assets present? ---
 $assets = Join-Path $repo 'assets'
 $required = @('termux.apk','termux-boot.apk','termux-api.apk','shizuku.apk',
-              'shizuku-api.jar','shizuku-provider.jar','shizuku-aidl.jar','shizuku-shared.jar')
+              'shizuku-api.jar','shizuku-provider.jar','shizuku-aidl.jar','shizuku-shared.jar',
+              'androidx-annotation.jar')
 foreach ($r in $required) {
   if (-not (Test-Path (Join-Path $assets $r))) { throw 'missing asset: ' + $r }
 }
@@ -76,13 +77,14 @@ $cp = @($plat,
         (Join-Path $assets 'shizuku-api.jar'),
         (Join-Path $assets 'shizuku-provider.jar'),
         (Join-Path $assets 'shizuku-aidl.jar'),
-        (Join-Path $assets 'shizuku-shared.jar')) -join ';'
+        (Join-Path $assets 'shizuku-shared.jar'),
+        (Join-Path $assets 'androidx-annotation.jar')) -join ';'
 $srcDirs = @((Join-Path $repo 'app\common\java'), (Join-Path $proj 'java'))
 $javaFiles = @()
 foreach ($sd in $srcDirs) {
   $javaFiles += Get-ChildItem -Path $sd -Recurse -Filter *.java | ForEach-Object { $_.FullName }
 }
-& $javac -encoding UTF-8 -classpath $cp -d $classes $javaFiles
+& $javac -encoding UTF-8 -Xlint:-deprecation -classpath $cp -d $classes $javaFiles
 if ($LASTEXITCODE -ne 0) { throw 'javac failed' }
 
 # --- 4. jar classes + d8 ---
@@ -95,7 +97,8 @@ $d8Inputs = @($classesJar,
               (Join-Path $assets 'shizuku-api.jar'),
               (Join-Path $assets 'shizuku-provider.jar'),
               (Join-Path $assets 'shizuku-aidl.jar'),
-              (Join-Path $assets 'shizuku-shared.jar'))
+              (Join-Path $assets 'shizuku-shared.jar'),
+              (Join-Path $assets 'androidx-annotation.jar'))
 & $d8 --lib $plat --min-api 24 --output $out $d8Inputs
 if ($LASTEXITCODE -ne 0) { throw 'd8 failed' }
 $dex = Join-Path $out 'classes.dex'
