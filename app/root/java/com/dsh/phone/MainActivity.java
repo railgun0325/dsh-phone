@@ -45,7 +45,8 @@ public class MainActivity extends WizardActivity {
         }
         log("root 可用");
 
-        boolean termuxInstalled = ShRoot.exec("pm list packages com.termux", 15000).out.contains("package:com.termux");
+        // pm path 精确匹配：pm list 的 "package:com.termux.boot/api" 子串会误判为已安装
+        boolean termuxInstalled = ShRoot.exec("pm path com.termux", 15000).code == 0;
         String uid;
         if (termuxInstalled) {
             uid = termuxUid();
