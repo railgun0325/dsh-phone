@@ -19,9 +19,6 @@ public class MainActivity extends WizardActivity {
     private static final String HOME = "/data/data/com.termux/files/home";
 
     @Override
-    protected String title() { return "DSH Phone"; }
-
-    @Override
     protected String modeLabel() { return "Root 版"; }
 
     @Override

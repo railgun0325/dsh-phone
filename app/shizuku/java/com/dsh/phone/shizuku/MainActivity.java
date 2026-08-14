@@ -48,9 +48,6 @@ public class MainActivity extends WizardActivity {
     }
 
     @Override
-    protected String title() { return "DSH Phone"; }
-
-    @Override
     protected String modeLabel() { return "Shizuku 版"; }
 
     @Override

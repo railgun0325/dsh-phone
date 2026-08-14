@@ -2,11 +2,14 @@ package com.dsh.phone.common;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import android.os.Bundle;
-import android.view.Gravity;
 import android.view.View;
+import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -16,21 +19,21 @@ import android.widget.TextView;
 /**
  * One-tap deployment wizard base.
  *
- * Flavor activities extend this and implement:
- *   doDeploy(apiKey)   — runs on a background thread; report progress with log()/setStatus().
- *   shellActivityClass — the WebView shell to open when the user taps "打开 DSH".
+ * UX contract: no title bar; the API key is stored in local SharedPreferences
+ * after the first successful deploy and prefilled afterwards; when DSH is already
+ * running on 127.0.0.1:3080 the shell opens immediately; after a successful deploy
+ * the shell opens automatically — there is no manual "open" button.
  */
 public abstract class WizardActivity extends Activity {
+    private static final String PREFS = "dsh_phone";
+    private static final String KEY_API = "api_key";
+
     protected TextView statusView;
     protected TextView logView;
     protected EditText keyInput;
     protected Button deployBtn;
-    protected Button openBtn;
     private final StringBuilder logBuf = new StringBuilder();
     private boolean deploying = false;
-
-    /** Heading shown above the status line. */
-    protected abstract String title();
 
     /** Short mode label, e.g. "Root 版" / "Shizuku 版". */
     protected abstract String modeLabel();
@@ -38,45 +41,61 @@ public abstract class WizardActivity extends Activity {
     /** Deploy on a background thread. Throwing reports failure and ends the run. */
     protected abstract void doDeploy(String apiKey) throws Exception;
 
-    /** WebView shell activity opened by the "打开 DSH" button (and after success). */
+    /** WebView shell activity, opened automatically once DSH is reachable. */
     protected abstract Class<?> shellActivityClass();
+
+    protected SharedPreferences prefs() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE);
+    }
+
+    /** Blocking TCP probe of the on-device DSH port. */
+    protected boolean dshReachable(int timeoutMs) {
+        try (Socket s = new Socket()) {
+            s.connect(new InetSocketAddress("127.0.0.1", 3080), timeoutMs);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Open the WebView shell. */
+    protected void openShell() {
+        try {
+            Intent i = new Intent(this, shellActivityClass());
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(i);
+        } catch (Exception ignored) {}
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        LinearLayout root = Ui.vbox(this);
+        // No system action bar; the custom content fills the window.
+        try { requestWindowFeature(Window.FEATURE_NO_TITLE); } catch (Exception ignored) {}
 
-        TextView titleView = Ui.text(this, title(), 22, true);
-        root.addView(titleView, lp());
+        LinearLayout root = Ui.vbox(this);
 
         statusView = Ui.text(this, "状态：等待开始", 14, false);
         statusView.setTextColor(Color.parseColor("#4460A5"));
-        root.addView(statusView, lp(0, 10, 0, 10));
+        root.addView(statusView, lp(0, 4, 0, 10));
 
-        TextView keyLabel = Ui.text(this, "DeepSeek API Key（sk-…）", 13, true);
+        TextView keyLabel = Ui.text(this, "DeepSeek API Key（sk-…，只需填一次）", 13, true);
         root.addView(keyLabel, lp());
         keyInput = Ui.edit(this, "粘贴你的 DeepSeek API Key", true);
+        // Prefill the key stored after the first successful deploy.
+        String saved = prefs().getString(KEY_API, null);
+        if (saved != null && !saved.isEmpty()) keyInput.setText(saved);
         root.addView(keyInput, lp());
-        TextView keyHint = Ui.text(this, "Key 只写进手机本机的 Termux 环境，不内置、不上传、不进安装包。", 11, false);
+        TextView keyHint = Ui.text(this, "Key 只保存在本机 App 与 Termux 环境里，不内置、不上传、不进安装包。", 11, false);
         keyHint.setTextColor(Color.parseColor("#888888"));
         root.addView(keyHint, lp(0, 2, 0, 8));
 
         deployBtn = Ui.button(this, "一键部署");
-        root.addView(deployBtn, lp(0, 4, 0, 4));
+        root.addView(deployBtn, lp(0, 4, 0, 8));
         deployBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 startDeploy();
-            }
-        });
-
-        openBtn = Ui.button(this, "打开 DSH 界面");
-        root.addView(openBtn, lp(0, 4, 0, 8));
-        openBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent i = new Intent(WizardActivity.this, shellActivityClass());
-                startActivity(i);
             }
         });
 
@@ -89,6 +108,12 @@ public abstract class WizardActivity extends Activity {
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         setContentView(root);
+
+        // If DSH is already running (e.g. after a reboot + Termux:Boot), skip the
+        // wizard entirely and go straight to the shell.
+        if (dshReachable(1500)) {
+            openShell();
+        }
     }
 
     private LinearLayout.LayoutParams lp() {
@@ -146,10 +171,13 @@ public abstract class WizardActivity extends Activity {
         new Thread(new Runnable() {
             @Override
             public void run() {
+                boolean ok = false;
                 try {
                     doDeploy(key);
-                    setStatus("部署完成 ✓");
-                    log("[done] 部署完成，可以打开 DSH 界面了");
+                    // First successful deploy persists the key locally (device-only).
+                    prefs().edit().putString(KEY_API, key).apply();
+                    ok = true;
+                    setStatus("部署完成，正在打开界面…");
                 } catch (Exception e) {
                     log("[error] " + (e.getMessage() == null ? e.toString() : e.getMessage()));
                     setStatus("部署失败，请查看日志");
@@ -162,6 +190,7 @@ public abstract class WizardActivity extends Activity {
                         }
                     });
                 }
+                if (ok) openShell();
             }
         }, "dsh-deploy").start();
     }
