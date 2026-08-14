@@ -84,7 +84,7 @@ $javaFiles = @()
 foreach ($sd in $srcDirs) {
   $javaFiles += Get-ChildItem -Path $sd -Recurse -Filter *.java | ForEach-Object { $_.FullName }
 }
-& $javac -encoding UTF-8 -Xlint:-deprecation -classpath $cp -d $classes $javaFiles
+& $javac -encoding UTF-8 -classpath $cp -d $classes $javaFiles
 if ($LASTEXITCODE -ne 0) { throw 'javac failed' }
 
 # --- 4. jar classes + d8 ---

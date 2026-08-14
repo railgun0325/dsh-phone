@@ -22,7 +22,13 @@ $items = @(
   @{ name = 'shizuku-api.aar';      url = 'https://repo1.maven.org/maven2/dev/rikka/shizuku/api/13.1.5/api-13.1.5.aar';
      mirrors = @('https://maven.aliyun.com/repository/central/dev/rikka/shizuku/api/13.1.5/api-13.1.5.aar') },
   @{ name = 'shizuku-provider.aar'; url = 'https://repo1.maven.org/maven2/dev/rikka/shizuku/provider/13.1.5/provider-13.1.5.aar';
-     mirrors = @('https://maven.aliyun.com/repository/central/dev/rikka/shizuku/provider/13.1.5/provider-13.1.5.aar') }
+     mirrors = @('https://maven.aliyun.com/repository/central/dev/rikka/shizuku/provider/13.1.5/provider-13.1.5.aar') },
+  @{ name = 'shizuku-aidl.aar';      url = 'https://repo1.maven.org/maven2/dev/rikka/shizuku/aidl/13.1.5/aidl-13.1.5.aar';
+     mirrors = @('https://maven.aliyun.com/repository/central/dev/rikka/shizuku/aidl/13.1.5/aidl-13.1.5.aar') },
+  @{ name = 'shizuku-shared.aar';    url = 'https://repo1.maven.org/maven2/dev/rikka/shizuku/shared/13.1.5/shared-13.1.5.aar';
+     mirrors = @('https://maven.aliyun.com/repository/central/dev/rikka/shizuku/shared/13.1.5/shared-13.1.5.aar') },
+  @{ name = 'androidx-annotation.jar'; url = 'https://dl.google.com/dl/android/maven2/androidx/annotation/annotation/1.3.0/annotation-1.3.0.jar';
+     mirrors = @('https://maven.aliyun.com/repository/google/androidx/annotation/annotation/1.3.0/annotation-1.3.0.jar') }
 )
 foreach ($it in $items) {
   $dst = Join-Path $assets $it.name
@@ -38,7 +44,11 @@ foreach ($it in $items) {
 }
 # shizuku api/provider: Maven artifacts are AARs; only their classes.jar is needed for javac/d8
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-foreach ($aar in @(@('shizuku-api.aar', 'shizuku-api.jar'), @('shizuku-provider.aar', 'shizuku-provider.jar'))) {
+foreach ($aar in @(
+  @('shizuku-api.aar', 'shizuku-api.jar'),
+  @('shizuku-provider.aar', 'shizuku-provider.jar'),
+  @('shizuku-aidl.aar', 'shizuku-aidl.jar'),
+  @('shizuku-shared.aar', 'shizuku-shared.jar'))) {
   if ((Test-Path (Join-Path $assets $aar[0])) -and -not (Test-Path (Join-Path $assets $aar[1]))) {
     $tmp = Join-Path $assets ('aar-extracted-' + $aar[0])
     if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
