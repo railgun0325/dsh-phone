@@ -28,6 +28,12 @@
 adb uninstall com.dsh.phone 后重装。Termux/DSH 环境不受影响，新 APK 部署时会自动复用已有 Termux。
 （后续版本签名请务必沿用仓库本地 apk/debug.keystore，勿再遗失。）
 
+### Shizuku 版部署时报 pm install termux 失败（签名冲突）
+若手机装过 F-Droid/Play 版 Termux（签名与 GitHub 版不同），自动安装会失败。
+处理：先在系统设置卸载旧 Termux（或 adb uninstall com.termux），再点一键部署；
+也可保留旧 Termux 改用「手动安装」路线（docs/INSTALL.md 第二节）。
+另外 Shizuku 版的就绪探测依赖 Termux 为 debuggable 构建（本包分发的 GitHub 官方构建满足）；
+
 ## 运行类
 
 ### pkg 报 Cannot run 'pkg' command as root
