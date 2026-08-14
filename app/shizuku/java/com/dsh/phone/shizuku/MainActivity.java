@@ -213,6 +213,13 @@ public class MainActivity extends WizardActivity {
         log("[tip] 若重启后桥连不上：打开一次本 App，并在系统设置里允许 DSH Phone 自启动/后台无限制");
     }
 
+    @Override
+    protected void killStaleDsh() {
+        try {
+            runAs("pkill -f 'bin.js web' 2>/dev/null", 15000);
+        } catch (Exception ignored) {}
+    }
+
     /** Lightweight restart (same as the start step of doDeploy; no reinstall). */
     @Override
     protected void resumeDsh() throws Exception {

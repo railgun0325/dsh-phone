@@ -49,6 +49,11 @@ public abstract class WizardActivity extends Activity {
      *  Throwing reports failure; the wizard then offers a full redeploy. */
     protected abstract void resumeDsh() throws Exception;
 
+    /** Stop any stale DSH web process. Called after a failed deploy/resume so a
+     *  half-finished state cannot masquerade as "already deployed" (port 3080
+     *  still answering from the old process) on the next launch. */
+    protected void killStaleDsh() {}
+
     protected boolean isDeployed() {
         return "1".equals(prefs().getString(KEY_DEPLOYED, null));
     }
@@ -191,6 +196,7 @@ public abstract class WizardActivity extends Activity {
                     setStatus("DSH 已启动，正在打开界面…");
                 } catch (Exception e) {
                     log("[error] DSH 启动失败：" + (e.getMessage() == null ? e.toString() : e.getMessage()));
+                    try { killStaleDsh(); } catch (Exception ignored) {}
                     log("[hint] 如果多次失败，点下面的“一键部署”可完整修复。");
                     setStatus("DSH 启动失败，可点部署修复");
                 } finally {
@@ -239,6 +245,7 @@ public abstract class WizardActivity extends Activity {
                     setStatus("部署完成，正在打开界面…");
                 } catch (Exception e) {
                     log("[error] " + (e.getMessage() == null ? e.toString() : e.getMessage()));
+                    try { killStaleDsh(); } catch (Exception ignored) {}
                     setStatus("部署失败，请查看日志");
                 } finally {
                     deploying = false;

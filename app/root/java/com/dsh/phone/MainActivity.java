@@ -99,6 +99,11 @@ public class MainActivity extends WizardActivity {
         pollDsh(60000);
     }
 
+    @Override
+    protected void killStaleDsh() {
+        ShRoot.exec("pkill -f 'bin.js web' 2>/dev/null", 8000);
+    }
+
     /** Lightweight restart of an already-deployed DSH (no reinstall). */
     @Override
     protected void resumeDsh() throws Exception {
