@@ -1,0 +1,2 @@
+345b338ef4f98ce727beeb82ef26b50ef7ff50b86faa809087c9225ff8300b7e  dsh-phone-root-v0.2.4.apk
+0b51cd7278dd5207bf83cf13daa4bd026de869f1cbaa63491d0fbcb2aad0bd92  dsh-phone-shizuku-v0.2.4.apk

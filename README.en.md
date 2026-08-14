@@ -28,18 +28,18 @@
 
 ### Root edition (3 steps)
 
-1. Download and install [dsh-phone-root-v0.2.2.apk](https://github.com/railgun0325/dsh-phone/releases/download/v0.2.2/dsh-phone-root-v0.2.2.apk)
+1. Download and install [dsh-phone-root-v0.2.4.apk](https://github.com/railgun0325/dsh-phone/releases/download/v0.2.4/dsh-phone-root-v0.2.4.apk)
 2. Open the app and paste a DeepSeek API key ([platform.deepseek.com](https://platform.deepseek.com))
-3. Tap **deploy** → allow the superuser prompt → wait for “deploy complete” → tap **Open DSH**
+3. Tap **deploy** → allow the superuser prompt → wait; the shell opens automatically
 
 Deployment is fully automatic: install Termux (bootstrap is embedded in the APK, no download needed) → configure mirrors → install Node/DSH → inject plugin & key → start the server.
 
 ### Shizuku edition (4 steps)
 
-1. Download and install [dsh-phone-shizuku-v0.2.2.apk](https://github.com/railgun0325/dsh-phone/releases/download/v0.2.2/dsh-phone-shizuku-v0.2.2.apk)
+1. Download and install [dsh-phone-shizuku-v0.2.4.apk](https://github.com/railgun0325/dsh-phone/releases/download/v0.2.4/dsh-phone-shizuku-v0.2.4.apk)
 2. Open the app → tap deploy → follow the guide to **install Shizuku** and pair via wireless debugging (Developer options → Wireless debugging → pair code; a one-time OS security requirement)
 3. Return to the app and paste your API key
-4. Tap **deploy** → wait for completion → tap **Open DSH**
+4. Tap **deploy** → wait; the shell opens automatically
 
 > After a reboot: open Shizuku once to confirm auto-start (most devices resume automatically); DSH itself is restarted by Termux:Boot.
 
