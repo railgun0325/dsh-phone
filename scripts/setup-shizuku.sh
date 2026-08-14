@@ -71,10 +71,18 @@ EOF
   npm install @img/sharp-wasm32 --no-save 2>/dev/null || echo "[warn] sharp-wasm32 skipped"
 
   echo "[step] patch node-pty lazy load"
-  node "$HOME/patch-dsh.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js"
+  if [ -f "$HOME/patch-dsh.mjs" ]; then
+    node "$HOME/patch-dsh.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js"
+  else
+    echo "[warn] patch-dsh.mjs 缺失，跳过（不影响主流程）"
+  fi
 
   echo "[step] patch session/attachment publish (link -> rename, Android SELinux denies link)"
-  node "$HOME/patch-dsh-link.mjs" "$DSH_DIR/node_modules/@deepseek-ai"
+  if [ -f "$HOME/patch-dsh-link.mjs" ]; then
+    node "$HOME/patch-dsh-link.mjs" "$DSH_DIR/node_modules/@deepseek-ai"
+  else
+    echo "[warn] patch-dsh-link.mjs 缺失，跳过（不影响主流程）"
+  fi
 
   echo "[step] register dsh-android-control plugin"
   PLUGIN_DIR="$DSH_DIR/node_modules/dsh-android-control"

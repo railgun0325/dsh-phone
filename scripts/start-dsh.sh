@@ -11,4 +11,8 @@ if [ -f "$HOME/.dsh-api-key" ]; then
   export DEEPSEEK_API_KEY="$(cat "$HOME/.dsh-api-key")"
 fi
 exec > "$HOME/dsh-web.log" 2>&1
+# Kill any stale dsh web process first: otherwise the new one dies on
+# EADDRINUSE while the old process keeps serving deleted plugin files.
+pkill -f 'bin.js web' 2>/dev/null
+sleep 1
 exec /data/data/com.termux/files/usr/bin/node --expose-internals /data/data/com.termux/files/usr/lib/node_modules/@deepseek-ai/dsh/lib/bin.js web

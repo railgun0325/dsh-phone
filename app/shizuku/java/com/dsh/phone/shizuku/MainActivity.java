@@ -288,6 +288,7 @@ public class MainActivity extends WizardActivity {
             {"setup-shizuku.sh", "755"},
             {"start-dsh.sh", "755"},
             {"patch-dsh.mjs", "755"},
+            {"patch-dsh-link.mjs", "755"},
             {"cordis.patch.yml", "644"},
             {"boot-dsh-shizuku.sh", "755"},
             {"plugin/index.js", "644"},
