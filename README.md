@@ -29,7 +29,7 @@
 
 ### Root 版（三步）
 
-1. 下载 [dsh-phone-root-v0.2.0.apk](https://github.com/railgun0325/dsh-phone/releases/download/v0.2.0/dsh-phone-root-v0.2.0.apk) 并安装（允许「未知来源」）
+1. 下载 [dsh-phone-root-v0.2.1.apk](https://github.com/railgun0325/dsh-phone/releases/download/v0.2.1/dsh-phone-root-v0.2.1.apk) 并安装（允许「未知来源」）
 2. 打开 App，粘贴 DeepSeek API Key（[platform.deepseek.com](https://platform.deepseek.com) 申请）
 3. 点 **一键部署** → 弹出超级用户授权时点允许 → 等待日志出现「部署完成」→ 点 **打开 DSH 界面**
 
@@ -39,7 +39,7 @@
 
 ### Shizuku 版（四步）
 
-1. 下载 [dsh-phone-shizuku-v0.2.0.apk](https://github.com/railgun0325/dsh-phone/releases/download/v0.2.0/dsh-phone-shizuku-v0.2.0.apk) 并安装
+1. 下载 [dsh-phone-shizuku-v0.2.1.apk](https://github.com/railgun0325/dsh-phone/releases/download/v0.2.1/dsh-phone-shizuku-v0.2.1.apk) 并安装
 2. 打开 App → 点部署 → 按引导**一键安装 Shizuku**，然后按 Shizuku 提示完成无线调试配对（开发者选项 → 无线调试 → 配对码；系统级安全要求，仅此一次）
 3. 回到 App，粘贴 API Key
 4. 点 **一键部署** → 等待完成 → 点 **打开 DSH 界面**

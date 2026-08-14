@@ -55,6 +55,8 @@ public final class ShizukuExec {
         if (!binderReady()) {
             throw new IllegalStateException("Shizuku 未就绪（binder 未连接）");
         }
+        String safeCmd = cmd.replaceAll("sk-[A-Za-z0-9]{6,}", "sk-***");
+        android.util.Log.i("DSHDeploy", "exec[" + timeoutMs + "ms]: " + safeCmd.substring(0, Math.min(120, safeCmd.length())));
         ShizukuRemoteProcess p = newProcess(new String[]{"sh", "-c", cmd});
         InputStream in = p.getInputStream();
         InputStream errIn = p.getErrorStream();
@@ -76,16 +78,25 @@ public final class ShizukuExec {
         });
         feeder.start();
 
-        boolean finished;
-        try {
-            finished = p.waitForTimeout(timeoutMs, TimeUnit.MILLISECONDS);
-        } catch (Throwable t) {
-            finished = false;
+        // Poll exitValue instead of waitForTimeout: ShizukuRemoteProcess.waitForTimeout
+        // has proven unreliable on fast-exiting processes (call never returns on some ROMs).
+        int code = -1;
+        boolean finished = false;
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                code = p.exitValue();
+                finished = true;
+                break;
+            } catch (IllegalThreadStateException stillRunning) {
+                try { Thread.sleep(100); } catch (InterruptedException ie) { break; }
+            } catch (IllegalArgumentException stillRunning) {
+                // ShizukuRemoteProcess.exitValue() throws IllegalArgumentException
+                // ("process hasn't exited") instead of IllegalThreadStateException.
+                try { Thread.sleep(100); } catch (InterruptedException ie) { break; }
+            }
         }
-        int code;
-        if (finished) {
-            try { code = p.exitValue(); } catch (Throwable t) { code = -1; }
-        } else {
+        if (!finished) {
             try { p.destroy(); } catch (Throwable ignored) {}
             code = -1;
         }

@@ -28,17 +28,30 @@ EOF
   node -v
   npm -v
 
-  echo "[step] npm registry (npmmirror)"
-  npm config set registry https://registry.npmmirror.com
+  echo "[step] npm retry hardening"
+  npm config set fetch-retries 5
+  npm config set fetch-retry-mintimeout 20000
+  npm config set fetch-retry-maxtimeout 120000
 
-  echo "[step] install DSH (ignore scripts; native modules patched later)"
-  if ! npm install -g --ignore-scripts @deepseek-ai/dsh@latest; then
-    echo "[fallback] first attempt failed — patch koffi if present, then retry"
+  echo "[step] install DSH (ignore scripts; native modules patched later; registry fallback chain)"
+  # npmmirror -> Huawei Cloud -> official npmjs. VPN fake-ip / flaky WiFi proofing.
+  DSH_INSTALLED=""
+  for REG in https://registry.npmmirror.com https://repo.huaweicloud.com/repository/npm/ https://registry.npmjs.org; do
+    echo "[step] trying registry: $REG"
+    if npm install -g --ignore-scripts --registry "$REG" @deepseek-ai/dsh@latest; then
+      npm config set registry "$REG"
+      DSH_INSTALLED=1
+      break
+    fi
+    echo "[fallback] registry $REG failed — patching koffi if present, then trying next"
     KOFFI_CC="$(npm root -g)/@deepseek-ai/dsh/node_modules/koffi/lib/native/base/base.cc"
     if [ -f "$KOFFI_CC" ] && ! grep -q 'ANDROID' "$KOFFI_CC"; then
       sed -i 's/#if defined(__linux__)/#if defined(__linux__) && !defined(__ANDROID__)/' "$KOFFI_CC"
     fi
-    npm install -g --ignore-scripts @deepseek-ai/dsh@latest
+  done
+  if [ -z "$DSH_INSTALLED" ]; then
+    echo "[error] all npm registries failed; aborting"
+    exit 1
   fi
 
   DSH_DIR="$(npm root -g)/@deepseek-ai/dsh"

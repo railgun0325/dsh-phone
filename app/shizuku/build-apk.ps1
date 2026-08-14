@@ -107,7 +107,7 @@ if (-not (Test-Path $dex)) { throw 'd8 did not produce classes.dex' }
 # --- 5. aapt2 link ---
 Write-Output '--- aapt2 link ---'
 $base = Join-Path $out 'base.apk'
-& $aapt2 link -o $base -I $plat --manifest (Join-Path $proj 'AndroidManifest.xml') --version-code 2 --version-name 0.2.0 $resZip
+& $aapt2 link -o $base -I $plat --manifest (Join-Path $proj 'AndroidManifest.xml') --version-code 3 --version-name 0.2.1 $resZip
 if ($LASTEXITCODE -ne 0) { throw 'aapt2 link failed' }
 
 # --- 6. add assets + dex (forward-slash asset names) ---
