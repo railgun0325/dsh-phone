@@ -34,6 +34,16 @@ adb uninstall com.dsh.phone 后重装。Termux/DSH 环境不受影响，新 APK 
 也可保留旧 Termux 改用「手动安装」路线（docs/INSTALL.md 第二节）。
 另外 Shizuku 版的就绪探测依赖 Termux 为 debuggable 构建（本包分发的 GitHub 官方构建满足）；
 
+### 发送消息失败：EACCES … session.jsonl.zstd.tmp → link permission denied
+DSH 的会话文件用 link()（硬链接）原子发布，安卓 SELinux 对 App uid 拒绝 link。
+处理：确保 setup 已跑 patch-dsh-link.mjs（v0.2.2 起内置），或手动执行：
+node ~/patch-dsh-link.mjs /data/data/com.termux/files/usr/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai
+然后重启 dsh web。
+
+### 手机重启/放后台后 android_* 工具报「bridge call failed」
+MIUI 会冻结/回收后台的 DSH Phone 进程（桥随之失联）。处理：打开一次 DSH Phone App（v0.2.2 起打开即自愈）；
+系统设置里允许其自启动、电池「无限制」、最近任务加锁。
+
 ## 运行类
 
 ### pkg 报 Cannot run 'pkg' command as root

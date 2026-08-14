@@ -73,6 +73,9 @@ EOF
   echo "[step] patch node-pty lazy load"
   node "$HOME/patch-dsh.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js"
 
+  echo "[step] patch session/attachment publish (link -> rename, Android SELinux denies link)"
+  node "$HOME/patch-dsh-link.mjs" "$DSH_DIR/node_modules/@deepseek-ai"
+
   echo "[step] register dsh-android-control plugin"
   PLUGIN_DIR="$DSH_DIR/node_modules/dsh-android-control"
   mkdir -p "$PLUGIN_DIR/lib"

@@ -40,6 +40,14 @@ public class MainActivity extends WizardActivity {
     }
 
     @Override
+    protected void onCreate(android.os.Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Ensure the local bridge is alive whenever the app is opened
+        // (MIUI may freeze/kill the backgrounded process; reopening heals it).
+        try { BridgeService.start(this); } catch (Throwable t) { Log.w(TAG, "bridge start: " + t); }
+    }
+
+    @Override
     protected String title() { return "DSH Phone"; }
 
     @Override
@@ -190,6 +198,22 @@ public class MainActivity extends WizardActivity {
         } else {
             step("[12/12] DSH web 已就绪 ✓");
         }
+
+        // One-time battery whitelist prompt: MIUI freezes backgrounded apps
+        // (bridge stops answering) unless the app is exempt from optimization.
+        try {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    try {
+                        Intent bi = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        bi.setData(Uri.parse("package:" + getPackageName()));
+                        bi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(bi);
+                    } catch (Throwable ignored) {}
+                }
+            });
+        } catch (Throwable ignored) {}
+        log("[tip] 若重启后桥连不上：打开一次本 App，并在系统设置里允许 DSH Phone 自启动/后台无限制");
     }
 
     // ---- helpers ----

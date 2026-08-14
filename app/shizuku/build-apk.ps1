@@ -49,6 +49,7 @@ $payloadFiles = @(
   @{ src = 'scripts\setup-shizuku.sh';    dst = 'setup-shizuku.sh' },
   @{ src = 'scripts\start-dsh.sh';        dst = 'start-dsh.sh' },
   @{ src = 'scripts\patch-dsh.mjs';       dst = 'patch-dsh.mjs' },
+  @{ src = 'scripts\patch-dsh-link.mjs';  dst = 'patch-dsh-link.mjs' },
   @{ src = 'scripts\cordis.patch.yml';    dst = 'cordis.patch.yml' },
   @{ src = 'scripts\boot-dsh-shizuku.sh'; dst = 'boot-dsh-shizuku.sh' },
   @{ src = 'plugin\index.js';             dst = 'plugin\index.js' },
@@ -107,7 +108,7 @@ if (-not (Test-Path $dex)) { throw 'd8 did not produce classes.dex' }
 # --- 5. aapt2 link ---
 Write-Output '--- aapt2 link ---'
 $base = Join-Path $out 'base.apk'
-& $aapt2 link -o $base -I $plat --manifest (Join-Path $proj 'AndroidManifest.xml') --version-code 3 --version-name 0.2.1 $resZip
+& $aapt2 link -o $base -I $plat --manifest (Join-Path $proj 'AndroidManifest.xml') --version-code 4 --version-name 0.2.2 $resZip
 if ($LASTEXITCODE -ne 0) { throw 'aapt2 link failed' }
 
 # --- 6. add assets + dex (forward-slash asset names) ---
