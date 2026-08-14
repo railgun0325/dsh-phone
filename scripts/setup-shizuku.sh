@@ -12,6 +12,15 @@ export LD_LIBRARY_PATH=$PREFIX/lib
 : > "$HOME/setup-dsh.log"
 set -eo pipefail
 {
+  # Fast path: previous run completed (marker) and node+DSH still present
+  # -> skip apt/npm downloads entirely (seconds instead of minutes).
+  FAST=""
+  if [ -f "$HOME/.dsh-setup-ok" ] && [ -x "$PREFIX/bin/node" ]      && [ -f "$PREFIX/lib/node_modules/@deepseek-ai/dsh/package.json" ]; then
+    FAST=1
+    echo "[fast] 环境已就绪，跳过 apt/npm 下载（强制重装请删除 ~/.dsh-setup-ok）"
+  fi
+
+  if [ -z "$FAST" ]; then
   echo "[step] write TUNA apt source"
   cat > "$PREFIX/etc/apt/sources.list" << 'EOF'
 # TUNA mirror (Termux main repo)
@@ -53,6 +62,7 @@ EOF
     echo "[error] all npm registries failed; aborting"
     exit 1
   fi
+  fi  # end fast-skip
 
   DSH_DIR="$(npm root -g)/@deepseek-ai/dsh"
   echo "DSH_DIR=$DSH_DIR"
@@ -67,8 +77,12 @@ EOF
   fi
 
   echo "[step] sharp wasm fallback"
-  cd "$DSH_DIR"
-  npm install @img/sharp-wasm32 --no-save 2>/dev/null || echo "[warn] sharp-wasm32 skipped"
+  if [ -z "$FAST" ]; then
+    cd "$DSH_DIR"
+    npm install @img/sharp-wasm32 --no-save 2>/dev/null || echo "[warn] sharp-wasm32 skipped"
+  else
+    echo "[skip] sharp wasm (fast path, already installed)"
+  fi
 
   echo "[step] patch node-pty lazy load"
   if [ -f "$HOME/patch-dsh.mjs" ]; then
@@ -122,5 +136,6 @@ EOF
 alias dsh='node --expose-internals $(npm root -g)/@deepseek-ai/dsh/lib/bin.js'
 EOF
 
+  touch "$HOME/.dsh-setup-ok"
   echo "SETUP OK"
 } 2>&1 | tee -a "$HOME/setup-dsh.log"
