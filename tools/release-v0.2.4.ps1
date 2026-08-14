@@ -21,7 +21,8 @@ $sums = Get-FileHash $rootRelease, $shizukuRelease -Algorithm SHA256 | ForEach-O
 $sums | Set-Content (Join-Path $stage 'SHA256SUMS-v0.2.4.txt')
 Write-Output $sums
 $tag = 'v0.2.4'
-$exists = gh release view $tag -R railgun0325/dsh-phone 2>$null
+gh release view $tag -R railgun0325/dsh-phone *> $null
+$exists = ($LASTEXITCODE -eq 0)
 if (-not $exists) {
   gh release create $tag -R railgun0325/dsh-phone --title 'v0.2.4 - Root fixed on HyperOS + open-and-go UX' --notes-file $notes $rootRelease $shizukuRelease (Join-Path $stage 'SHA256SUMS-v0.2.4.txt')
 } else {
