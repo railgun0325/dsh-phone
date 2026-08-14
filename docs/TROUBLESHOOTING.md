@@ -23,6 +23,11 @@
 - Android 10+ 后台启动服务受限：部署时请保持 DSH Phone 在前台
 - MIUI 需允许 Termux 与 DSH Phone 的后台弹窗/自启动
 
+### 安装新 APK 报 INSTALL_FAILED_UPDATE_INCOMPATIBLE（或"签名不一致"）
+装过 v0.1.0 纯壳的手机：v0.2.0 换用了新签名（旧签名库已遗失），需先卸载旧壳：
+adb uninstall com.dsh.phone 后重装。Termux/DSH 环境不受影响，新 APK 部署时会自动复用已有 Termux。
+（后续版本签名请务必沿用仓库本地 apk/debug.keystore，勿再遗失。）
+
 ## 运行类
 
 ### pkg 报 Cannot run 'pkg' command as root

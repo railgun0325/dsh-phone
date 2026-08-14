@@ -35,6 +35,8 @@
 
 部署过程全自动：安装 Termux（bootstrap 内置在 APK 里，无需联网）→ 配置国内镜像 → 安装 Node/DSH → 注入插件与 Key → 启动服务。
 
+> 装过 v0.1.0 纯壳的：先卸载旧壳再装（v0.2.0 换用了新签名，无法覆盖安装；Termux/DSH 环境不受影响，新 APK 会自动复用）。
+
 ### Shizuku 版（四步）
 
 1. 下载 dsh-phone-shizuku-v0.2.0.apk 并安装，地址见 [Releases](https://github.com/railgun0325/dsh-phone/releases/latest)
@@ -106,6 +108,8 @@ powershell -File app/shizuku/build-apk.ps1       # → app/shizuku/out/dsh-phone
 ```
 
 构建链为零 Gradle 的手工管线：javac → d8 → aapt2 → zipalign → apksigner，依赖位置通过环境变量 ANDROID_JDK / ANDROID_SDK_ROOT 或仓库旁的 jdk17/、android-sdk/ 目录指定。
+
+> ⚠️ 签名使用仓库本地的 apk/debug.keystore（gitignored，**务必备份**——v0.1.0 就因签名库遗失导致 v0.2.0 无法覆盖安装）。
 
 ## 目录结构
 
