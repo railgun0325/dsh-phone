@@ -1,0 +1,13 @@
+- id: hmr
+  disabled: true
+- id: bash-sandbox
+  disabled: true
+- id: sandbox
+  disabled: true
+- id: permission
+  disabled: true
+- insert:
+    - id: bash-local
+      name: '@deepseek-ai/dsh-bash-local'
+    - id: android-control
+      name: dsh-android-control

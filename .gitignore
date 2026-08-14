@@ -1,0 +1,10 @@
+node_modules/
+*.apk
+*.keystore
+.dsh-api-key
+dsh-web.log
+*.log
+out/
+classes/
+dist/
+.DS_Store
