@@ -89,10 +89,13 @@ EOF
   install -m 644 "$HOME/cordis.patch.yml" "$HOME/.dsh/profiles/web/cordis.patch.yml"
 
   echo "[step] write API key"
-  if [ -n "$DEEPSEEK_API_KEY" ]; then
+  if [ -n "$DEEPSEEK_API_KEY" ] && printf '%s' "$DEEPSEEK_API_KEY" | grep -Eq '^sk-[A-Za-z0-9_-]+$'; then
     printf '%s' "$DEEPSEEK_API_KEY" > "$HOME/.dsh-api-key"
     chmod 600 "$HOME/.dsh-api-key"
     echo "[ok] API key saved to ~/.dsh-api-key (chmod 600)"
+  elif [ -n "$DEEPSEEK_API_KEY" ]; then
+    echo "[error] DEEPSEEK_API_KEY 格式非法（应为 sk- 开头的纯文本，不含换行）；未写入"
+    exit 1
   else
     echo "[skip] DEEPSEEK_API_KEY not set"
   fi

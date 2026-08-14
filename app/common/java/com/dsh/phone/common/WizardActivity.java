@@ -214,8 +214,9 @@ public abstract class WizardActivity extends Activity {
             setStatus("请先粘贴 API Key");
             return;
         }
-        if (!key.startsWith("sk-")) {
-            setStatus("Key 看起来不对（应以 sk- 开头），已继续部署");
+        if (!key.startsWith("sk-") || key.length() > 200 || key.contains("\n")) {
+            setStatus("Key 格式不对：应以 sk- 开头的纯文本，无换行。请重新粘贴。");
+            return;
         }
         deploying = true;
         deployBtn.setEnabled(false);
