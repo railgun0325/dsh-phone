@@ -89,11 +89,18 @@ App 部署日志打印授权结果明细；README/向导加一句：为支持 ag
 1. **无 termux-wake-lock 命令**：当前 Termux 仓库与 Termux:API 0.53 都不再提供该脚本。
    android_wakelock 改为 `am startservice --user 0 -a com.termux.service_wake_lock|_unlock com.termux/com.termux.app.TermuxService`，
    由 Termux 应用（0.118.3，声明 WAKE_LOCK）自身的 TermuxService 持有 PARTIAL_WAKE_LOCK。
-2. **termux-location 无 `-u` 参数**：传 `-u` 会直接报 illegal option。android_location 改为纯
-   `-p <provider> -r once`，由工具超时充当预算（GPS 45s，network 回退 20s）。
+2. **termux-location 无 `-u` 参数**：传 `-u` 会直接报 illegal option。android_location 改为先读
+   `-r last` 缓存，再 `-p <provider> -r once` 单次（GPS 45s，network 回退 20s），失败返回诊断。
 3. **termux-volume 不支持单流读取**：只传 stream 会报 Invalid argument count。android_volume 改为
    无参读取全部流后在插件内过滤；写入仍为 `termux-volume <stream> <level>`。
 4. **授权清单收敛**：Termux:API 0.53 targetSdk=28，manifest 未声明 POST_NOTIFICATIONS / WAKE_LOCK /
    MODIFY_AUDIO_SETTINGS，逐项 pm grant 必失败。部署只授 CAMERA、RECORD_AUDIO、
    ACCESS_FINE_LOCATION、ACCESS_COARSE_LOCATION；通知默认放行、震动安装期授予、wakelock 归 Termux 应用。
 5. **sensor list 返回 JSON**：`termux-sensor -l` 输出 `{"sensors":["..."]}`，插件按 JSON 解析并保留文本回退。
+6. **settings 必须绝对路径**（13 Pro 实测）：PATH 首项会命中 Termux 的 `$PREFIX/bin/settings` 包装脚本，
+   su 通道下报 `cmd: Failure calling service settings: Failed transaction`；统一改用 `/system/bin/settings`。
+7. **工具返回值必须 lossless JSON**（DSH 0.1.0-rc.6 实测）：返回值里出现 `undefined` 属性会报
+   `value is not lossless JSON`；插件在注册时统一包装 execute，递归剥掉 undefined 再返回。
+8. **termux-location 冷定位受限**（Android 14 实测）：Termux:API 广播接收器约 10s 被系统回收，
+   无缓存定位时 `-r once` 拿不到冷启动 fix（termux-api issue #776）。工具改为先试 `-r last` 缓存，
+   再试 gps/network 单次，失败时返回 location_mode 与可操作提示。
