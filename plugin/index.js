@@ -761,15 +761,15 @@ export function apply(ctx) {
   register(defineTool({
     name: 'android_brightness',
     description:
-      'Read or set the system screen brightness. Read returns the current value and brightness mode; write forces manual mode '
-      + '(screen_brightness_mode=0) and then sets the value. Executes through the root channel (su on rooted devices; Shizuku bridge = shell uid '
-      + 'on unrooted devices — the bridge shell holds WRITE_SETTINGS on DSH Phone deployments). Value range is device dependent; 0-255 works on the '
-      + 'supported test devices. 0 is minimum brightness, not screen-off.',
+      'Read or set the system screen brightness. Read uses the root channel (/system/bin/settings; su on rooted devices, Shizuku bridge on '
+      + 'unrooted devices). Write first tries the root channel and, when the bridge is unavailable, falls back to termux-brightness '
+      + '(Termux:API, requires the WRITE_SETTINGS appop on com.termux.api). Write forces manual brightness mode. Value range is device '
+      + 'dependent; 0-255 works on the supported test devices. 0 is minimum brightness, not screen-off.',
     parameters: {
       level: { type: 'integer', description: 'Brightness to set, typically 0-255. Omit to read the current value.' },
     },
     output: { schema: { type: 'json' }, render: renderJson },
-    timeoutMs: 20000,
+    timeoutMs: 30000,
     async execute(args, exec) {
       if (args.level === undefined) {
         const res = await run('/system/bin/settings get system screen_brightness; echo MODE=$(/system/bin/settings get system screen_brightness_mode)', { timeout: 10000, signal: exec.signal })
@@ -788,7 +788,13 @@ export function apply(ctx) {
       const level = Math.round(args.level)
       if (!Number.isFinite(level) || level < 0 || level > 255) return { ok: false, error: 'level must be an integer between 0 and 255' }
       const res = await run('/system/bin/settings put system screen_brightness_mode 0 && /system/bin/settings put system screen_brightness ' + level, { timeout: 10000, signal: exec.signal })
-      return { ok: res.ok, brightness: level, error: res.ok ? undefined : (res.stderr || res.stdout).trim().slice(-1000) }
+      if (res.ok) return { ok: true, brightness: level, channel: 'settings' }
+      // Bridge unavailable (e.g. token not aligned yet): Termux:API can set brightness when
+      // com.termux.api holds the WRITE_SETTINGS appop.
+      const fb = await termux('termux-brightness ' + level, 15000, exec.signal)
+      return fb.ok
+        ? { ok: true, brightness: level, channel: 'termux-api' }
+        : { ok: false, brightness: level, error: (res.stderr || res.stdout).trim().slice(-1000) + ' | termux-brightness: ' + (fb.stderr || fb.stdout).trim().slice(-500) }
     },
   }))
 

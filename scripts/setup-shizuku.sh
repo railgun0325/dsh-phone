@@ -166,6 +166,11 @@ EOF
   echo "[ok] 通知无需授权：Termux:API targetSdk=28，系统默认放行通知"
   echo "[ok] wakelock 走 com.termux TermuxService（WAKE_LOCK 已随 Termux 安装授予）"
   echo "[ok] 震动 VIBRATE 已随 Termux:API 安装自动授予"
+  if echo "$(bridge_exec "cmd appops set com.termux.api WRITE_SETTINGS allow")" | grep -q '"exitCode":0'; then
+    echo "[ok] appops allow com.termux.api WRITE_SETTINGS（termux-brightness 亮度写回退）"
+  else
+    echo "[warn] WRITE_SETTINGS appop 授权失败: com.termux.api（亮度写将走 bridge 通道）"
+  fi
   if echo "$(bridge_exec "dumpsys deviceidle whitelist +com.termux.api")" | grep -q '"exitCode":0'; then
     echo "[ok] 电池豁免 deviceidle whitelist +com.termux.api"
   else
