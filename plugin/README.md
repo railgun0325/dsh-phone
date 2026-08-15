@@ -62,7 +62,7 @@ X-DSH-Cmd / X-DSH-Timeout，body 为 stdin，响应 JSON {ok,exitCode,stdout,std
 - wakelock：走 **com.termux 应用自身的 TermuxService**（`com.termux.service_wake_lock/_unlock`），WAKE_LOCK 随 Termux APK 安装授予；当前 Termux 已不带旧的 termux-wake-lock 脚本
 - 震动：VIBRATE 是 Termux:API 的普通权限，安装时自动授予
 - 音量：termux-volume 实测无需额外授权（Termux:API 0.53 未声明 MODIFY_AUDIO_SETTINGS）
-- 亮度：shell 级 WRITE_SETTINGS（Shizuku 版已查证 shell 持有；Root 版走 su）
+- 亮度：读走 shell 级 WRITE_SETTINGS（Shizuku 版已查证 shell 持有；Root 版走 su）；写失败自动回退 `termux-brightness`（部署时给 com.termux.api 授 WRITE_SETTINGS appop）
 
 Shizuku 版授权回退链：pm grant → cmd appops set → 仍失败则部署日志提示用户到 Termux:API 应用详情页手动开（一次终身）。
 

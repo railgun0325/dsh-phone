@@ -104,3 +104,9 @@ App 部署日志打印授权结果明细；README/向导加一句：为支持 ag
 8. **termux-location 冷定位受限**（Android 14 实测）：Termux:API 广播接收器约 10s 被系统回收，
    无缓存定位时 `-r once` 拿不到冷启动 fix（termux-api issue #776）。工具改为先试 `-r last` 缓存，
    再试 gps/network 单次，失败时返回 location_mode 与可操作提示。
+9. **亮度写增加 termux-brightness 回退**（17 Pro 实测）：桥 token 未对齐时 settings 通道不可用；
+   部署时给 com.termux.api 授 `WRITE_SETTINGS` appop，android_brightness 写失败后自动走
+   `termux-brightness`（Termux:API 通道），17 Pro 实测 120 设置成功并恢复。
+10. **17 Pro 桥 token 历史错配**：Termux 侧 `~/.dsh-bridge-token` 为手写占位串、App 侧为随机 token，
+   导致桥依赖工具（亮度读/屏幕态/wake_unlock）返回 unauthorized；装 v0.2.5 APK 重跑部署即可对齐，
+   不属于插件代码问题。
