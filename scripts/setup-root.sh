@@ -114,6 +114,24 @@ EOF
     echo "[skip] DEEPSEEK_API_KEY not set"
   fi
 
+  echo "[step] grant Termux:API hardware permissions (camera/mic/location/notification)"
+  # 硬件工具（plugin v2）依赖 Termux:API 的运行时权限；逐项 pm grant，幂等可重跑。
+  # WAKE_LOCK/VIBRATE/MODIFY_AUDIO_SETTINGS 是安装期普通权限，装 APK 时即自动授予。
+  API_RUNTIME_PERMS="android.permission.CAMERA android.permission.RECORD_AUDIO android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.POST_NOTIFICATIONS"
+  for P in $API_RUNTIME_PERMS; do
+    if su -c "pm grant com.termux.api $P" 2>/dev/null; then
+      echo "[ok] pm grant com.termux.api $P"
+    else
+      echo "[warn] pm grant 失败: $P（可到 Termux:API 应用详情页手动开启，一次终身）"
+    fi
+  done
+  echo "[ok] 安装期权限 WAKE_LOCK / VIBRATE / MODIFY_AUDIO_SETTINGS 已随 APK 安装授予"
+  if su -c "dumpsys deviceidle whitelist +com.termux.api" 2>/dev/null; then
+    echo "[ok] 电池豁免 deviceidle whitelist +com.termux.api"
+  else
+    echo "[warn] 电池豁免失败: com.termux.api（MIUI 可能冻结 Termux:API，建议到设置里允许后台无限制）"
+  fi
+
   echo "[step] record launcher alias"
   cat > "$HOME/.bashrc" << 'EOF'
 alias dsh='node --expose-internals $(npm root -g)/@deepseek-ai/dsh/lib/bin.js'

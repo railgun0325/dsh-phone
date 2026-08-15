@@ -4,6 +4,8 @@ DSH 插件：给 agent 一双操作安卓的「手」，外加手机竖屏布局
 
 ## 工具（host 半）
 
+### 屏幕与 UI（13 个，v0.1/v0.2）
+
 | 工具 | 说明 |
 |---|---|
 | android_shell | 执行任意 shell 命令：root 手机走 Magisk su；未 root 走 Shizuku 桥（adb shell 级） |
@@ -16,12 +18,48 @@ DSH 插件：给 agent 一双操作安卓的「手」，外加手机竖屏布局
 | android_wake_unlock | 点亮并上滑解锁 |
 | android_clipboard | 系统剪贴板读写（termux-api） |
 
+### 硬件工具（15 个，v0.2.5，统一走 termux-api 通道）
+
+| 工具 | 说明 | 输出位置 |
+|---|---|---|
+| android_status | 电量/充电/温度 + 亮度 + 音量 + 亮灭屏/锁屏 + 网络摘要 | - |
+| android_sensor_list | 传感器名/类型清单（termux-sensor -l） | - |
+| android_sensor_read | 单传感器短采样（默认 2s、上限 10s、-n 次数，JSON 截断） | - |
+| android_camera_photo | 后摄拍照（失败重试一次；Legacy Camera 机型可能低分辨率） | ~/dsh-shots/photo-*.jpg |
+| android_mic_record | 麦克风录音（默认 5s、上限 60s；锁屏/后台可能静音） | ~/dsh-shots/rec-*.m4a |
+| android_speak | 系统 TTS 朗读（中文用系统 TTS 引擎） | - |
+| android_play_media | media player play / stop / info | - |
+| android_volume | 音量读写（call/system/ring/music/alarm/notification） | - |
+| android_location | 一次定位（gps 优先，失败自动 network 回退，约 60s 预算） | - |
+| android_brightness | 亮度读写（写时强制手动亮度模式；root=su / Shizuku=shell 桥） | - |
+| android_wakelock | CPU wakelock 获取 / 释放（长任务基础件） | - |
+| android_screen_off | 按电源键灭屏（仅屏幕亮着时按下，不会误唤醒） | - |
+| android_vibrate | 震动（默认 1s、上限 5s） | - |
+| android_notify | 通知（标题/内容，预留按钮动作——按钮动作是 Termux 内 shell，务必简单安全） | - |
+| android_confirm_dialog | 手机端 confirm 弹窗（高风险操作人工确认护栏） | - |
+
+约定：termux-* 一律 `run(cmd, { root: false })`（Termux uid 直达 Termux:API）；settings/input 类走默认 root 通道（su → Shizuku 桥自动回退）。
+模型能力注意：DeepSeek 文本模型听不懂录音、看不见照片，录音/照片是给用户播放或留给视觉模型读的。
+
 ## 执行通道（双执行器）
 
 所有 root=true 的命令先探测 su（/system/bin/su 等候选，跑 id 验证 uid=0）；
 没有 su 时自动切到 Shizuku 桥：HTTP POST 127.0.0.1:36527/exec（headers X-DSH-Token /
 X-DSH-Cmd / X-DSH-Timeout，body 为 stdin，响应 JSON {ok,exitCode,stdout,stderr}）。
 桥由 DSH Phone App（Shizuku 版）的前台服务提供；token 部署时写入 ~/.dsh-bridge-token。
+
+## 硬件工具所需权限（com.termux.api）
+
+部署脚本会静默授予以下运行时权限并做 Doze 电池豁免，App 部署日志打印逐项结果：
+
+- CAMERA（拍照）
+- RECORD_AUDIO（录音）
+- ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION（定位）
+- POST_NOTIFICATIONS（通知，Android 13+）
+
+安装期即自动授予的普通权限：WAKE_LOCK（wakelock）、VIBRATE（震动）、MODIFY_AUDIO_SETTINGS（音量）。
+亮度写入走 shell 级 WRITE_SETTINGS（Shizuku 版已查证 shell 持有该权限；Root 版走 su）。
+Shizuku 版授权回退链：pm grant → cmd appops set → 仍失败则部署日志提示用户到 Termux:API 应用详情页手动开（一次终身）。
 
 ## 移动端布局（client 半）
 

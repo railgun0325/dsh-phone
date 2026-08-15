@@ -1,6 +1,6 @@
 {
   "name": "dsh-android-control",
-  "version": "0.2.0",
+  "version": "0.2.5",
   "description": "DSH plugin giving the agent hands on Android + mobile web layout",
   "type": "module",
   "main": "index.js",

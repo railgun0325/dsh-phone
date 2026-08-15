@@ -157,6 +157,33 @@ async function screenSize() {
   return [1080, 2400]
 }
 
+// ---- plugin v2: termux-api hardware helpers ------------------------------
+
+/** Media output directory (plugin runs as the com.termux uid). */
+const MEDIA_DIR = (process.env.HOME || '/data/data/com.termux/files/home') + '/dsh-shots'
+
+/** Run one command as the plain Termux uid — termux-api tools must not go through su. */
+function termux(cmd, timeout, signal) {
+  return run(cmd, { root: false, timeout, signal })
+}
+
+/** Clamp an integer argument to [min,max]; fall back to dflt when absent/not finite. */
+function clampInt(value, min, max, dflt) {
+  const n = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : dflt
+  return Math.min(Math.max(n, min), max)
+}
+
+/** Best-effort JSON parse of a stdout blob. */
+function tryJson(text) {
+  try { return JSON.parse(String(text).trim()) } catch { return undefined }
+}
+
+/** Keep the tail of a possibly long stdout blob (JSONL from termux-sensor). */
+function tailText(text, maxChars) {
+  const s = String(text)
+  return s.length > maxChars ? '(truncated — last ' + maxChars + ' chars)\n' + s.slice(-maxChars) : s
+}
+
 export function apply(ctx) {
   ctx.tools.register(defineTool({
     name: 'android_shell',
@@ -408,6 +435,394 @@ export function apply(ctx) {
       }
       const res = await run('termux-clipboard-get', { root: false, timeout: 15000, signal: exec.signal })
       return res.ok ? { ok: true, text: res.stdout } : { ok: false, error: res.stderr.trim() || 'clipboard get failed' }
+    },
+  }))
+
+  // ---- plugin v2: phone hardware toolset (termux-api unified channel) ----
+
+  ctx.tools.register(defineTool({
+    name: 'android_status',
+    description:
+      'Snapshot the phone hardware state: battery (percentage/charging/temperature), current screen brightness and mode, '
+      + 'volume levels, screen on-off + lock state, and a short network summary (default route, cellular type, 2s internet probe). '
+      + 'Battery and volume read through Termux:API as the Termux uid; brightness and screen state read through the root/Shizuku channel.',
+    parameters: {},
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 45000,
+    async execute(args, exec) {
+      const [battery, volume, brightness, screen, network] = await Promise.all([
+        termux('termux-battery-status', 15000, exec.signal),
+        termux('termux-volume', 15000, exec.signal),
+        run('settings get system screen_brightness; echo MODE=$(settings get system screen_brightness_mode)', { timeout: 10000, signal: exec.signal }),
+        run("dumpsys power 2>/dev/null | grep -m1 -o 'mWakefulness=[A-Za-z]*'; dumpsys window 2>/dev/null | grep -m1 -o 'mDreamingLockscreen=[a-z]*'", { timeout: 15000, signal: exec.signal }),
+        termux('ip route 2>/dev/null | head -3; echo CELL=$(getprop gsm.network.type); (ping -c 1 -W 2 223.5.5.5 >/dev/null 2>&1 && echo internet=online) || echo internet=offline', 15000, exec.signal),
+      ])
+      let brightValue
+      let brightMode
+      for (const line of brightness.stdout.split(/\r?\n/)) {
+        const t = line.trim()
+        if (brightValue === undefined && /^\d+$/.test(t)) brightValue = Number(t)
+        const mm = t.match(/^MODE=(\d+)$/)
+        if (mm) brightMode = Number(mm[1])
+      }
+      const wake = screen.stdout.match(/mWakefulness=(\w+)/)
+      const lock = screen.stdout.match(/mDreamingLockscreen=(\w+)/)
+      const routes = []
+      let cellular
+      let internet
+      for (const line of network.stdout.split(/\r?\n/)) {
+        const t = line.trim()
+        const cell = t.match(/^CELL=(.*)$/)
+        const net = t.match(/^internet=(.*)$/)
+        if (cell) cellular = cell[1]
+        if (net) internet = net[1]
+        if (t && !cell && !net) routes.push(t)
+      }
+      return {
+        ok: true,
+        battery: tryJson(battery.stdout) ?? { raw: battery.stdout.trim(), error: battery.stderr.trim() || undefined },
+        brightness: brightValue !== undefined ? { value: brightValue, mode: brightMode ?? null } : { error: (brightness.stderr || brightness.stdout || 'unavailable').trim() },
+        volume: tryJson(volume.stdout) ?? { raw: volume.stdout.trim(), error: volume.stderr.trim() || undefined },
+        screen: { wakefulness: wake ? wake[1] : null, dreamingLockscreen: lock ? lock[1] : null, error: screen.stderr.trim() || undefined },
+        network: { routes, cellular: cellular ?? null, internet: internet ?? 'unknown', error: network.stderr.trim() || undefined },
+      }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_sensor_list',
+    description:
+      'List all sensors available on this phone via termux-sensor -l (Termux:API, Termux uid). '
+      + 'Returns name/type lines; use the exact sensor name with android_sensor_read. No dangerous permission required.',
+    parameters: {},
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 20000,
+    async execute(args, exec) {
+      const res = await termux('termux-sensor -l', 15000, exec.signal)
+      const lines = res.stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+      return res.ok
+        ? { ok: true, count: lines.length, sensors: lines.slice(0, 200) }
+        : { ok: false, error: (res.stderr || 'termux-sensor -l failed').trim().slice(-1000) }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_sensor_read',
+    description:
+      'Sample one sensor for a short window through Termux:API (Termux uid). Default window 2 seconds, hard cap 10 seconds; '
+      + 'optionally set the sample count (default 1, max 20; the inter-sample delay is split from the window). '
+      + 'Returns the JSON sample sequence tail-truncated to the last 8000 characters. The screen does not need to be on.',
+    parameters: {
+      sensor: { type: 'string', required: true, description: 'Exact sensor name from android_sensor_list.' },
+      seconds: { type: 'integer', description: 'Sampling window in seconds (default 2, max 10).' },
+      count: { type: 'integer', description: 'Number of samples (default 1, max 20).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 30000,
+    async execute(args, exec) {
+      const sec = clampInt(args.seconds, 1, 10, 2)
+      const count = clampInt(args.count, 1, 20, 1)
+      const delay = Math.max(100, Math.floor((sec * 1000) / count))
+      const cmd = 'termux-sensor -s ' + shq(args.sensor) + ' -n ' + count + ' -d ' + delay
+      const res = await termux(cmd, sec * 1000 + 15000, exec.signal)
+      return res.ok
+        ? { ok: true, sensor: args.sensor, seconds: sec, count, delayMs: delay, data: tailText(res.stdout, 8000) }
+        : { ok: false, sensor: args.sensor, error: (res.stderr || res.stdout).trim().slice(-1500) || 'termux-sensor failed' }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_camera_photo',
+    description:
+      'Take one photo with the rear camera via termux-camera-photo -c 0 and save it to ~/dsh-shots/photo-<timestamp>.jpg '
+      + '(Termux:API, Termux uid). Returns the absolute path — read it back with the file/image tool to view it. '
+      + 'Requirements and limits: com.termux.api needs the CAMERA permission; the screen must be on and unlocked (the camera activity '
+      + 'may need foreground); some devices only expose the low-resolution Legacy Camera API. The current DeepSeek text model cannot see '
+      + 'images — photos are for the user or a vision-capable model. Retries once on failure.',
+    parameters: {
+      filename: { type: 'string', description: 'Output JPG name (default photo-<timestamp>.jpg).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 90000,
+    async execute(args, exec) {
+      const name = args.filename ?? 'photo-' + Date.now() + '.jpg'
+      const path = MEDIA_DIR + '/' + name
+      const mkdir = 'mkdir -p ' + shq(MEDIA_DIR)
+      let res = await termux(mkdir + ' && termux-camera-photo -c 0 ' + shq(path), 30000, exec.signal)
+      if (!res.ok) {
+        res = await termux(mkdir + ' && termux-camera-photo -c 0 ' + shq(path), 30000, exec.signal)
+      }
+      return res.ok
+        ? { ok: true, path }
+        : { ok: false, error: (res.stderr + '\n' + res.stdout).trim().slice(-1500) || 'camera photo failed' }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_mic_record',
+    description:
+      'Record microphone audio to ~/dsh-shots/rec-<timestamp>.m4a via termux-microphone-record (Termux:API, Termux uid). '
+      + 'Default 5 seconds, hard cap 60 seconds. Returns the absolute path for user playback or archival. '
+      + 'Limits: com.termux.api needs RECORD_AUDIO; screen-off / background recording may produce silence on some ROMs; '
+      + 'the text model cannot listen to audio — no transcription is performed.',
+    parameters: {
+      seconds: { type: 'integer', description: 'Recording length in seconds (default 5, max 60).' },
+      filename: { type: 'string', description: 'Output file name (default rec-<timestamp>.m4a).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 90000,
+    async execute(args, exec) {
+      const sec = clampInt(args.seconds, 1, 60, 5)
+      const name = args.filename ?? 'rec-' + Date.now() + '.m4a'
+      const path = MEDIA_DIR + '/' + name
+      const base = 'mkdir -p ' + shq(MEDIA_DIR) + ' && termux-microphone-record -f ' + shq(path) + ' -l ' + sec
+      let cmd = 'mkdir -p ' + shq(MEDIA_DIR) + ' && termux-microphone-record -e aac -f ' + shq(path) + ' -l ' + sec
+      let res = await termux(cmd, sec * 1000 + 20000, exec.signal)
+      if (!res.ok) {
+        // Very old Termux:API builds may not know the AAC encoder flag; fall back to the default encoder.
+        res = await termux(base, sec * 1000 + 20000, exec.signal)
+      }
+      return res.ok
+        ? { ok: true, path, seconds: sec }
+        : { ok: false, error: (res.stderr + '\n' + res.stdout).trim().slice(-1500) || 'microphone record failed' }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_speak',
+    description:
+      'Speak text aloud through the system TTS engine via termux-tts-speak (Termux:API, Termux uid). '
+      + 'Chinese works when a Chinese TTS engine is selected in Android settings. Useful to notify a person near the phone. '
+      + 'No dangerous permission required.',
+    parameters: {
+      text: { type: 'string', required: true, description: 'Text to speak.' },
+      language: { type: 'string', description: 'Optional TTS language tag (e.g. zh-CN, en-US).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 30000,
+    async execute(args, exec) {
+      const lang = args.language !== undefined ? ' -l ' + shq(args.language) : ''
+      const res = await termux('termux-tts-speak' + lang + ' ' + shq(String(args.text ?? '')), 25000, exec.signal)
+      return { ok: res.ok, error: res.ok ? undefined : (res.stderr + res.stdout).trim().slice(-1000) }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_play_media',
+    description:
+      'Control media playback on the phone via termux-media-player (Termux:API, Termux uid). '
+      + 'play starts an audio/video file from an absolute path (e.g. a recording made by android_mic_record); stop stops playback; '
+      + 'info reports current playback status.',
+    parameters: {
+      action: { type: 'string', required: true, enum: ['play', 'stop', 'info'], description: 'Playback action.' },
+      path: { type: 'string', description: 'Absolute path of the media file (required for action=play).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 30000,
+    async execute(args, exec) {
+      if (args.action === 'play') {
+        if (args.path === undefined) return { ok: false, error: 'path is required for action=play' }
+        const res = await termux('termux-media-player play ' + shq(args.path), 20000, exec.signal)
+        return { ok: res.ok, action: 'play', path: args.path, output: res.stdout.trim().slice(-1000), error: res.ok ? undefined : res.stderr.trim().slice(-1000) }
+      }
+      const res = await termux('termux-media-player ' + args.action, 20000, exec.signal)
+      const info = res.stdout.trim()
+      return { ok: res.ok, action: args.action, info: info ? info.slice(-2000) : undefined, error: res.ok ? undefined : res.stderr.trim().slice(-1000) }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_volume',
+    description:
+      'Read or set Android volume levels via termux-volume (Termux:API, Termux uid). No args reads every stream; stream only reads that stream; '
+      + 'stream + level sets it. Valid streams: call, system, ring, music, alarm, notification. Level is an integer accepted by Termux '
+      + '(music typically 0-15, alarm 0-7).',
+    parameters: {
+      stream: { type: 'string', enum: ['call', 'system', 'ring', 'music', 'alarm', 'notification'], description: 'Audio stream (optional; omit to read all).' },
+      level: { type: 'integer', description: 'Volume level to set (requires stream).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 20000,
+    async execute(args, exec) {
+      if (args.level !== undefined && args.stream === undefined) return { ok: false, error: 'stream is required when setting a level' }
+      const cmd = args.stream === undefined
+        ? 'termux-volume'
+        : 'termux-volume ' + args.stream + (args.level === undefined ? '' : ' ' + args.level)
+      const res = await termux(cmd, 15000, exec.signal)
+      return res.ok
+        ? { ok: true, stream: args.stream ?? null, level: args.level ?? null, volumes: tryJson(res.stdout) ?? res.stdout.trim() }
+        : { ok: false, error: (res.stderr + res.stdout).trim().slice(-1000) || 'termux-volume failed' }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_location',
+    description:
+      'Get a one-shot location fix via termux-location (Termux:API, Termux uid). Tries GPS first and automatically falls back to the network provider '
+      + 'when GPS fails or times out. Total budget about 60 seconds (45s GPS + 15s network). Returns latitude/longitude, accuracy in meters and the provider used. '
+      + 'com.termux.api needs ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION; the first fix after a permission grant can be slow.',
+    parameters: {
+      provider: { type: 'string', enum: ['gps', 'network'], description: 'Preferred provider (default gps with automatic network fallback).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 90000,
+    async execute(args, exec) {
+      const pref = args.provider ?? 'gps'
+      let res = await termux('termux-location -p ' + shq(pref) + ' -r once -u 40000', 45000, exec.signal)
+      let provider = pref
+      if (!res.ok || tryJson(res.stdout) === undefined) {
+        const alt = pref === 'gps' ? 'network' : 'gps'
+        res = await termux('termux-location -p ' + alt + ' -r once -u 15000', 20000, exec.signal)
+        provider = alt
+      }
+      const info = tryJson(res.stdout) ?? {}
+      if (res.ok && info.latitude !== undefined && info.longitude !== undefined) {
+        return { ok: true, provider, latitude: info.latitude, longitude: info.longitude, accuracy: info.accuracy ?? null, bearing: info.bearing ?? null, speed: info.speed ?? null, raw: info }
+      }
+      return { ok: false, provider, error: (res.stderr + ' ' + res.stdout).trim().slice(-1500) || 'location unavailable' }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_brightness',
+    description:
+      'Read or set the system screen brightness. Read returns the current value and brightness mode; write forces manual mode '
+      + '(screen_brightness_mode=0) and then sets the value. Executes through the root channel (su on rooted devices; Shizuku bridge = shell uid '
+      + 'on unrooted devices — the bridge shell holds WRITE_SETTINGS on DSH Phone deployments). Value range is device dependent; 0-255 works on the '
+      + 'supported test devices. 0 is minimum brightness, not screen-off.',
+    parameters: {
+      level: { type: 'integer', description: 'Brightness to set, typically 0-255. Omit to read the current value.' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 20000,
+    async execute(args, exec) {
+      if (args.level === undefined) {
+        const res = await run('settings get system screen_brightness; echo MODE=$(settings get system screen_brightness_mode)', { timeout: 10000, signal: exec.signal })
+        const lines = res.stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+        let value
+        let mode
+        for (const line of lines) {
+          if (value === undefined && /^\d+$/.test(line)) value = Number(line)
+          const mm = line.match(/^MODE=(\d+)$/)
+          if (mm) mode = Number(mm[1])
+        }
+        return res.ok
+          ? { ok: true, brightness: value ?? null, mode: mode ?? null }
+          : { ok: false, error: (res.stderr || 'settings get failed').trim() }
+      }
+      const level = Math.round(args.level)
+      if (!Number.isFinite(level) || level < 0 || level > 255) return { ok: false, error: 'level must be an integer between 0 and 255' }
+      const res = await run('settings put system screen_brightness_mode 0 && settings put system screen_brightness ' + level, { timeout: 10000, signal: exec.signal })
+      return { ok: res.ok, brightness: level, error: res.ok ? undefined : (res.stderr || res.stdout).trim().slice(-1000) }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_wakelock',
+    description:
+      'Acquire or release a CPU wakelock through termux-wake-lock (Termux:API, Termux uid). Acquire before long-running background work '
+      + '(downloads, sensor sampling, file processing) so the OS is less likely to suspend the phone; release afterwards. '
+      + 'com.termux.api holds the WAKE_LOCK permission.',
+    parameters: {
+      action: { type: 'string', enum: ['acquire', 'release'], description: 'acquire (default) or release the wakelock.' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 15000,
+    async execute(args, exec) {
+      const release = args.action === 'release'
+      const res = await termux(release ? 'termux-wake-lock -r' : 'termux-wake-lock', 10000, exec.signal)
+      return { ok: res.ok, held: !release, error: res.ok ? undefined : res.stderr.trim() }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_screen_off',
+    description:
+      'Turn the screen off by pressing the power key through the root/Shizuku input channel. Only presses POWER while the screen is awake, '
+      + 'so it never accidentally wakes a sleeping phone. Works on both rooted and Shizuku devices.',
+    parameters: {},
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 20000,
+    async execute(args, exec) {
+      const state = await run("dumpsys power 2>/dev/null | grep -m1 -o 'mWakefulness=[A-Za-z]*'", { timeout: 10000, signal: exec.signal })
+      if (state.stdout.includes('Awake')) {
+        const res = await run('input keyevent KEYCODE_POWER', { timeout: 10000, signal: exec.signal })
+        return { ok: res.ok, pressed: true, error: res.ok ? undefined : res.stderr.trim() }
+      }
+      return { ok: true, pressed: false, note: 'screen already off/dozing' }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_vibrate',
+    description:
+      'Vibrate the phone for a short duration via termux-vibrate (Termux:API, Termux uid). Default 1000ms, max 5000ms. '
+      + 'Useful as a physical attention signal. com.termux.api holds the VIBRATE permission.',
+    parameters: {
+      durationMs: { type: 'integer', description: 'Vibration duration in milliseconds (default 1000, max 5000).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 15000,
+    async execute(args, exec) {
+      const dur = clampInt(args.durationMs, 1, 5000, 1000)
+      const res = await termux('termux-vibrate -d ' + dur, 10000, exec.signal)
+      return { ok: res.ok, durationMs: dur, error: res.ok ? undefined : res.stderr.trim() }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_notify',
+    description:
+      'Post an Android notification via termux-notification (Termux:API, Termux uid). Requires POST_NOTIFICATIONS on com.termux.api (Android 13+). '
+      + 'Optional buttonText/buttonAction reserve a notification action button — WARNING: buttonAction is executed by Termux as a shell command when '
+      + 'the user taps it, so keep it to a simple, safe command. A stable id replaces a previous notification with the same id.',
+    parameters: {
+      title: { type: 'string', required: true, description: 'Notification title.' },
+      content: { type: 'string', description: 'Notification body text.' },
+      buttonText: { type: 'string', description: 'Optional action button label (requires buttonAction).' },
+      buttonAction: { type: 'string', description: 'Shell command the action button runs in Termux when tapped.' },
+      id: { type: 'string', description: 'Optional stable notification id (replaces same-id notifications).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 20000,
+    async execute(args, exec) {
+      if ((args.buttonText === undefined) !== (args.buttonAction === undefined)) {
+        return { ok: false, error: 'buttonText and buttonAction must be provided together' }
+      }
+      let cmd = 'termux-notification --title ' + shq(args.title ?? '')
+      if (args.content !== undefined) cmd += ' --content ' + shq(args.content)
+      if (args.id !== undefined) cmd += ' --id ' + shq(args.id)
+      if (args.buttonText !== undefined) cmd += ' --button1 ' + shq(args.buttonText) + ' --button1-action ' + shq(args.buttonAction)
+      const res = await termux(cmd, 15000, exec.signal)
+      return { ok: res.ok, error: res.ok ? undefined : (res.stderr + res.stdout).trim().slice(-1000) || 'notification failed' }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'android_confirm_dialog',
+    description:
+      'Show a confirm dialog on the phone screen via termux-dialog confirm (Termux:API, Termux uid) and wait for the person to tap yes/no. '
+      + 'A manual-approval guard: use it before high-risk, irreversible or payment-like actions. Blocks until answered or the timeout expires. '
+      + 'The screen must be on and unlocked for the person to answer.',
+    parameters: {
+      title: { type: 'string', description: 'Dialog title (default: Confirm).' },
+      hint: { type: 'string', description: 'Hint text shown under the title.' },
+      timeoutMs: { type: 'integer', description: 'How long to wait in ms (default 120000, max 300000).' },
+    },
+    output: { schema: { type: 'json' }, render: renderJson },
+    timeoutMs: 300000,
+    async execute(args, exec) {
+      const timeout = clampInt(args.timeoutMs, 10000, 300000, 120000)
+      let cmd = 'termux-dialog confirm'
+      if (args.title !== undefined) cmd += ' -t ' + shq(args.title)
+      if (args.hint !== undefined) cmd += ' -i ' + shq(args.hint)
+      const res = await termux(cmd, timeout + 10000, exec.signal)
+      const parsed = tryJson(res.stdout)
+      if (res.ok && parsed !== undefined) {
+        const answer = typeof parsed.text === 'string' ? parsed.text : JSON.stringify(parsed)
+        return { ok: true, answered: true, answer, code: parsed.code }
+      }
+      return { ok: false, answered: false, error: (res.stderr + ' ' + res.stdout).trim().slice(-1000) || 'dialog dismissed or failed' }
     },
   }))
 }

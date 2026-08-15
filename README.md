@@ -10,7 +10,7 @@
 ## 它是干什么的
 
 - **双版本一键部署**：Root 版（已 root 手机）与 Shizuku 版（未 root 手机）都是「装 APK → 粘贴 Key → 点一下」的零配置流程，Termux / Node / DSH / 插件全自动装好
-- **AI 原生操作安卓**：13 个 android_* 工具 —— 截图、点击、滑动、输入、按键、打开应用、UI 层级分析、安装 APK、执行 shell 等
+- **AI 原生操作安卓**：28 个 android_* 工具 —— 截图、点击、滑动、输入、按键、打开应用、UI 层级分析、安装 APK、执行 shell 等 13 个屏幕/UI 工具，外加 15 个硬件工具（状态、传感器、拍照、录音、朗读、播放、音量、亮度、定位、通知、震动、灭屏、wakelock、人工确认弹窗）
 - **全程本地**：DSH 跑在手机里的 Termux + Node.js 上，界面是手机本机 3080 端口的 Web GUI（本 APK 内置 WebView 壳），电脑只在可选的 Shizuku 激活或调试时用一下
 - **API Key 只存本机**：安装包**不含任何 Key**，你粘贴的 Key 只写进手机本机的 Termux 环境（chmod 600），不内置、不上传、不进仓库
 
@@ -55,6 +55,9 @@
 - 「点屏幕坐标 (540, 1200)」
 - 「用 android_shell 执行 pm list packages」
 - 「把 /sdcard/Download/xxx.apk 装上」
+- 「拍张照给我看」/「用 android_status 查一下手机状态」
+- 「把音量调到 8」/「亮度调到 50%」
+- 「读一下加速度传感器」/「定位看看现在在哪」
 
 想用电脑操作：USB 连接后 adb forward tcp:3081 tcp:3080，浏览器开 http://127.0.0.1:3081。
 
@@ -67,10 +70,12 @@
 │                                                                     │
 │  Termux + Node.js                                                   │
 │     └── DSH web（web profile）                                      │
-│           ├── dsh-android-control 插件（13 个 android_* 工具）       │
+│           ├── dsh-android-control 插件（28 个 android_* 工具）       │
 │           │      ├─ Root 版：su ── input/screencap/am/pm/...       │
 │           │      └─ Shizuku 版：127.0.0.1:36527 本地桥 ── Shizuku   │
 │           │            daemon UserService（adb shell 级执行）        │
+│           ├── 硬件工具：termux-* 直连 Termux:API（Termux uid）       │
+│           │      拍照/录音落 ~/dsh-shots/                           │
 │           ├── bash-local（纯子进程 shell）                           │
 │           └── 移动端 CSS（抽屉侧边栏 / 横排设置导航）                 │
 │                                                                     │
@@ -84,6 +89,16 @@
 - 你粘贴的 Key 只写入手机本机 Termux 的 ~/.dsh-api-key（权限 600），随部署脚本注入环境变量
 - Key 申请：https://platform.deepseek.com → API Keys
 - 不想在 App 里填：部署完成后也可以手动改 ~/.dsh-api-key 再重启 DSH
+
+## 硬件权限说明（v0.2.5）
+
+为支持 agent 调用摄像头/麦克风/定位/通知等硬件能力，一键部署会给 **Termux:API**（不是 DSH Phone App）授予以下权限，并做电池豁免防止后台被冻结；App 部署日志会逐项打印授权结果，系统隐私指示灯全程可见：
+
+- 运行时权限（部署时静默授予）：CAMERA、RECORD_AUDIO、ACCESS_FINE_LOCATION、ACCESS_COARSE_LOCATION、POST_NOTIFICATIONS
+- 安装期普通权限（装 APK 即自动授予）：WAKE_LOCK、VIBRATE、MODIFY_AUDIO_SETTINGS
+- Root 版：su 直授；Shizuku 版：shell 级 pm grant → cmd appops 回退 → 失败则在日志提示到 Termux:API 应用详情页手动开（一次终身）
+
+> 模型能力边界：DeepSeek 文本模型**看不懂照片、听不懂录音**。拍照/录音是给用户查看/播放用的；agent 视觉闭环待后续可选配置 vision 模型（本次不实现）。
 
 ## 常见问题
 
@@ -117,7 +132,7 @@ powershell -File app/shizuku/build-apk.ps1       # → app/shizuku/out/dsh-phone
 app/          双版本 Android 应用（common 共享 UI/图标，root 与 shizuku 各自实现）
 tools/        资源拉取、图标生成、资源编译等构建工具
 scripts/      Termux 侧脚本（安装/启动/自启/DNS 修复/兼容补丁）
-plugin/       dsh-android-control 插件（13 个工具 + 移动端 CSS + su/Shizuku 桥双执行器）
+plugin/       dsh-android-control 插件（28 个工具 + 移动端 CSS + su/Shizuku 桥双执行器）
 docs/         安装手册 / 架构说明 / 排障手册
 apk/          v0.1.0 历史纯壳工程（保留）
 ```

@@ -120,6 +120,7 @@ public class MainActivity extends WizardActivity {
             pmInstallQuiet(new File(files, "termux-boot.apk"));
             pmInstallQuiet(new File(files, "termux-api.apk"));
         }
+        log("  部署将给 Termux:API 授予相机/麦克风/定位/通知等硬件权限（系统隐私指示灯全程可见，逐项结果见下方 setup 日志）…");
 
         // f. monkey launch + bootstrap
         step("[6/12] 启动 Termux 完成 bootstrap…");
@@ -168,6 +169,7 @@ public class MainActivity extends WizardActivity {
             throw new Exception("setup-shizuku.sh 失败（exit " + tr.code + "）。详见 Termux 内 ~/setup-dsh.log");
         }
         step("[9/12] DSH 安装完成");
+        log("  Termux:API 硬件权限处理完成（grant/appops/豁免明细见上方 setup 日志）");
 
         // k. boot script
         step("[10/12] 写开机自启（Termux:Boot）…");

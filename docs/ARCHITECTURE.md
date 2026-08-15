@@ -1,4 +1,4 @@
-# 架构说明（v0.2.0）
+# 架构说明（v0.2.5）
 
 ## 总览
 
@@ -8,16 +8,22 @@
 │   Root 版：su 编排（ShRoot.exec / execAs）                        │
 │   Shizuku 版：Shizuku.newProcess（pm install / monkey / 桥）      │
 │        ↓ 全自动：装 Termux → bootstrap → 装 Node/DSH → 插件/Key  │
+│        ↓ setup 末尾：给 com.termux.api 授硬件权限 + Doze 豁免     │
+│          Root：su pm grant / dumpsys whitelist                    │
+│          Shizuku：经桥 pm grant → cmd appops → 日志提示手动开     │
 └──────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────── 运行阶段 ────────────────────────────┐
 │  WebView ── http://127.0.0.1:3080                                │
 │     DSH web（Termux + Node.js，web profile）                      │
-│       ├── dsh-android-control 插件（13 个 android_* 工具）        │
-│       │     ├─ 执行器抽象 run()：                                 │
+│       ├── dsh-android-control 插件（28 个 android_* 工具）        │
+│       │     ├─ 屏幕/UI 13 个：执行器抽象 run()                    │
 │       │     │    su 可用 → execFile('su','-c',cmd)  (root)        │
 │       │     │    su 缺失 → HTTP 桥 127.0.0.1:36527/exec (Shizuku) │
-│       │     └─ 截图落 /data/local/tmp/dsh-shots（755/644）        │
+│       │     └─ 硬件 15 个：termux-* 统一走 root:false（Termux uid │
+│       │          → Termux:API），settings/input 类走 root 通道    │
+│       │     └─ 截图落 /data/local/tmp/dsh-shots；拍照/录音落      │
+│       │          ~/dsh-shots/（755/644，Termux 可读）             │
 │       ├── bash-local（纯子进程 shell，无 PTY）                    │
 │       └── 移动端 CSS（plugin/lib/client.js）                      │
 └──────────────────────────────────────────────────────────────────┘
@@ -46,6 +52,15 @@ package.json 的 exports 必须含 ./package.json（否则 loader 扫描不到 d
 ### 2. 安卓上执行命令的两条腿
 - **host 工具链**：插件 android_shell 直接 execFile su；无 su 时自动切换 Shizuku 桥（见下）
 - **DSH 自身 shell 服务**：web profile 用 bash-local（子进程 spawn，无 PTY），保证会话创建不被 bash 工具卡死
+
+### 2.1 硬件工具通道（v0.2.5，方案 A）
+- termux-* 命令（battery/sensor/camera/mic/tts/media/volume/location/wake-lock/vibrate/notify/dialog）
+  一律 `run(cmd, { root: false })`：插件进程即 com.termux uid，直接调 Termux:API，root 不参与。
+- brightness/screen_off 等 settings/input 类走默认 root 通道：root 版 su 直通；Shizuku 版桥回退（adb shell 级）。
+- 权限对象是 com.termux.api（不是 DSH Phone App）：运行时权限 CAMERA / RECORD_AUDIO /
+  ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION / POST_NOTIFICATIONS；普通权限 WAKE_LOCK / VIBRATE /
+  MODIFY_AUDIO_SETTINGS 随安装自动授予；Doze 电池豁免防止 MIUI 冻结 Termux:API。
+- 模型边界：DeepSeek 文本模型看不懂照片、听不懂录音；拍照/录音用于给用户看/播，视觉闭环留待可选 vision 模型。
 
 ### 3. Shizuku 桥（未 root 手机）
 - 协议：POST /exec，headers X-DSH-Token（= App files/bridge-token 与 Termux ~/.dsh-bridge-token）、

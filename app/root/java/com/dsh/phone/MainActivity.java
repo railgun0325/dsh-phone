@@ -69,6 +69,7 @@ public class MainActivity extends WizardActivity {
         installApk(bootApk, 120000);
         log("安装 Termux:API…");
         installApk(apiApk, 120000);
+        log("部署将给 Termux:API 授予相机/麦克风/定位/通知等硬件权限（系统隐私指示灯全程可见，逐项结果见下方 setup 日志）…");
 
         log("写入 payload 到 /data/local/tmp/dsh-stage…");
         transferPayload(payload, uid);
@@ -84,6 +85,7 @@ public class MainActivity extends WizardActivity {
         if (setup.code != 0) {
             throw new Exception("DSH 安装失败（exit " + setup.code + "）。详见 Termux 内 ~/setup-dsh.log");
         }
+        log("Termux:API 硬件权限处理完成（grant/豁免明细见上方 setup 日志）");
 
         log("配置开机自启（Termux:Boot）…");
         ShRoot.Result boot = ShRoot.execAs(uid,

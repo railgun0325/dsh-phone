@@ -131,6 +131,44 @@ EOF
     echo "[skip] DSH_BRIDGE_TOKEN not set"
   fi
 
+  echo "[step] grant Termux:API hardware permissions via Shizuku bridge (adb shell level)"
+  # 桥 = App 内 127.0.0.1:36527/exec，命令经 ShizukuExec 以 adb shell 级执行。
+  # 回退链：pm grant -> cmd appops set -> 部署日志提示用户到 Termux:API 详情页手动开（一次终身）。
+  # token 优先取本次部署传入的 env；手动重跑时回退读 ~/.dsh-bridge-token。
+  BRIDGE_TOKEN="${DSH_BRIDGE_TOKEN:-$(cat "$HOME/.dsh-bridge-token" 2>/dev/null || true)}"
+  bridge_exec() {
+    curl -sS --max-time 35 -X POST http://127.0.0.1:36527/exec \
+      -H "x-dsh-token: $BRIDGE_TOKEN" \
+      -H "x-dsh-cmd: $1" \
+      -H "x-dsh-timeout-ms: 30000"
+  }
+  API_RUNTIME_PERMS="android.permission.CAMERA android.permission.RECORD_AUDIO android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.POST_NOTIFICATIONS"
+  for P in $API_RUNTIME_PERMS; do
+    if echo "$(bridge_exec "pm grant com.termux.api $P")" | grep -q '"exitCode":0'; then
+      echo "[ok] pm grant com.termux.api $P"
+      continue
+    fi
+    case "$P" in
+      android.permission.CAMERA) OP=CAMERA ;;
+      android.permission.RECORD_AUDIO) OP=RECORD_AUDIO ;;
+      android.permission.ACCESS_FINE_LOCATION) OP=FINE_LOCATION ;;
+      android.permission.ACCESS_COARSE_LOCATION) OP=COARSE_LOCATION ;;
+      android.permission.POST_NOTIFICATIONS) OP=POST_NOTIFICATION ;;
+      *) OP="" ;;
+    esac
+    if [ -n "$OP" ] && echo "$(bridge_exec "cmd appops set com.termux.api $OP allow")" | grep -q '"exitCode":0'; then
+      echo "[ok] appops allow com.termux.api $OP（pm grant 不可用，已回退）"
+    else
+      echo "[manual] 请手动授予 com.termux.api 的 $P（系统设置 → 应用 → Termux:API → 权限），一次即可终身有效"
+    fi
+  done
+  echo "[ok] 安装期权限 WAKE_LOCK / VIBRATE / MODIFY_AUDIO_SETTINGS 已随 APK 安装授予"
+  if echo "$(bridge_exec "dumpsys deviceidle whitelist +com.termux.api")" | grep -q '"exitCode":0'; then
+    echo "[ok] 电池豁免 deviceidle whitelist +com.termux.api"
+  else
+    echo "[warn] 电池豁免失败: com.termux.api（MIUI 可能冻结 Termux:API，建议到设置里允许后台无限制）"
+  fi
+
   echo "[step] record launcher alias"
   cat > "$HOME/.bashrc" << 'EOF'
 alias dsh='node --expose-internals $(npm root -g)/@deepseek-ai/dsh/lib/bin.js'
