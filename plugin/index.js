@@ -453,7 +453,7 @@ export function apply(ctx) {
       const [battery, volume, brightness, screen, network] = await Promise.all([
         termux('termux-battery-status', 15000, exec.signal),
         termux('termux-volume', 15000, exec.signal),
-        run('settings get system screen_brightness; echo MODE=$(settings get system screen_brightness_mode)', { timeout: 10000, signal: exec.signal }),
+        run('/system/bin/settings get system screen_brightness; echo MODE=$(/system/bin/settings get system screen_brightness_mode)', { timeout: 10000, signal: exec.signal }),
         run("dumpsys power 2>/dev/null | grep -m1 -o 'mWakefulness=[A-Za-z]*'; dumpsys window 2>/dev/null | grep -m1 -o 'mDreamingLockscreen=[a-z]*'", { timeout: 15000, signal: exec.signal }),
         termux('ip route 2>/dev/null | head -3; echo CELL=$(getprop gsm.network.type); (ping -c 1 -W 2 223.5.5.5 >/dev/null 2>&1 && echo internet=online) || echo internet=offline', 15000, exec.signal),
       ])
@@ -641,7 +641,8 @@ export function apply(ctx) {
     description:
       'Read or set Android volume levels via termux-volume (Termux:API, Termux uid). No args reads every stream; stream only reads that '
       + 'stream (filtered client-side — termux-volume has no single-stream read mode); stream + level sets it. Valid streams: call, system, '
-      + 'ring, music, alarm, notification. Level is an integer accepted by Termux (music typically 0-15, alarm 0-7).',
+      + 'ring, music, alarm, notification. Level is an integer accepted by Termux; the valid range is device-dependent — read max_volume first '
+      + '(Xiaomi 13 Pro music max is 150, call max 11). Values above max are clamped by Termux:API.',
     parameters: {
       stream: { type: 'string', enum: ['call', 'system', 'ring', 'music', 'alarm', 'notification'], description: 'Audio stream (optional; omit to read all).' },
       level: { type: 'integer', description: 'Volume level to set (requires stream).' },
@@ -718,7 +719,7 @@ export function apply(ctx) {
     timeoutMs: 20000,
     async execute(args, exec) {
       if (args.level === undefined) {
-        const res = await run('settings get system screen_brightness; echo MODE=$(settings get system screen_brightness_mode)', { timeout: 10000, signal: exec.signal })
+        const res = await run('/system/bin/settings get system screen_brightness; echo MODE=$(/system/bin/settings get system screen_brightness_mode)', { timeout: 10000, signal: exec.signal })
         const lines = res.stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
         let value
         let mode
@@ -733,7 +734,7 @@ export function apply(ctx) {
       }
       const level = Math.round(args.level)
       if (!Number.isFinite(level) || level < 0 || level > 255) return { ok: false, error: 'level must be an integer between 0 and 255' }
-      const res = await run('settings put system screen_brightness_mode 0 && settings put system screen_brightness ' + level, { timeout: 10000, signal: exec.signal })
+      const res = await run('/system/bin/settings put system screen_brightness_mode 0 && /system/bin/settings put system screen_brightness ' + level, { timeout: 10000, signal: exec.signal })
       return { ok: res.ok, brightness: level, error: res.ok ? undefined : (res.stderr || res.stdout).trim().slice(-1000) }
     },
   }))
