@@ -30,7 +30,7 @@ DSH 插件：给 agent 一双操作安卓的「手」，外加手机竖屏布局
 | android_speak | 系统 TTS 朗读（中文用系统 TTS 引擎） | - |
 | android_play_media | media player play / stop / info | - |
 | android_volume | 音量读写（读全流；单流读取由插件过滤，写入走 termux-volume） | - |
-| android_location | 一次定位（gps 优先，失败自动 network 回退；工具超时即预算，无 -u 参数） | - |
+| android_location | 一次定位（先读缓存 last-known，再 gps→network 单次；Android 14+ 冷定位受 Termux:API 限制，失败返回开关诊断） | - |
 | android_brightness | 亮度读写（写时强制手动亮度模式；root=su / Shizuku=shell 桥） | - |
 | android_wakelock | Termux 应用 TermuxService wakelock 获取 / 释放（长任务基础件） | - |
 | android_screen_off | 按电源键灭屏（仅屏幕亮着时按下，不会误唤醒） | - |

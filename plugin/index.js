@@ -184,8 +184,33 @@ function tailText(text, maxChars) {
   return s.length > maxChars ? '(truncated — last ' + maxChars + ' chars)\n' + s.slice(-maxChars) : s
 }
 
+/** Recursively strip undefined properties so every tool return is lossless JSON.
+ *  DSH 0.1.0-rc.6 rejects tool output containing undefined values with
+ *  "value is not lossless JSON". */
+function cleanJson(value) {
+  if (Array.isArray(value)) return value.map(cleanJson)
+  if (value !== null && typeof value === 'object') {
+    const out = {}
+    for (const key of Object.keys(value)) {
+      const v = value[key]
+      if (v === undefined) continue
+      out[key] = cleanJson(v)
+    }
+    return out
+  }
+  return value
+}
+
 export function apply(ctx) {
-  ctx.tools.register(defineTool({
+  /** Register a tool, wrapping execute so its return value is always lossless JSON. */
+  function register(tool) {
+    if (typeof tool.execute === 'function') {
+      const inner = tool.execute
+      tool.execute = async (args, exec) => cleanJson(await inner(args, exec))
+    }
+    ctx.tools.register(tool)
+  }
+  register(defineTool({
     name: 'android_shell',
     description:
       'Run one shell command on the Android device. On rooted devices this goes through Magisk su; '
@@ -206,7 +231,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_screenshot',
     description:
       'Capture the current screen to a PNG under the DSH home directory (dsh-shots/). '
@@ -236,7 +261,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_tap',
     description:
       'Tap the screen at absolute pixel coordinates (x, y). Coordinates match the physical '
@@ -254,7 +279,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_swipe',
     description:
       'Swipe from (x1,y1) to (x2,y2) with an optional duration in ms (default 300). '
@@ -275,7 +300,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_text',
     description:
       'Type text into the currently focused field via Android input injection. '
@@ -291,7 +316,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_keyevent',
     description:
       'Send a key event: named keys (home, back, recents, power, wakeup, enter, backspace, tab, '
@@ -308,7 +333,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_open_app',
     description:
       'Launch an app by its Android package name (e.g. com.android.settings, com.tencent.mm). '
@@ -324,7 +349,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_current_app',
     description:
       'Report the app currently in the foreground (package and activity), from dumpsys. '
@@ -341,7 +366,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_ui_dump',
     description:
       'Dump the current screen hierarchy via uiautomator as XML (truncated to maxChars, default 12000). '
@@ -362,7 +387,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_install_apk',
     description:
       'Install (or upgrade) an APK file already on the device by absolute path, via pm install. '
@@ -378,7 +403,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_list_packages',
     description:
       'List installed Android packages (pm list packages), optionally filtered by a substring. '
@@ -396,7 +421,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_wake_unlock',
     description:
       'Wake the screen and swipe up to dismiss the lock screen (no PIN). '
@@ -415,7 +440,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_clipboard',
     description:
       'Read or write the system clipboard through termux-api. '
@@ -440,7 +465,7 @@ export function apply(ctx) {
 
   // ---- plugin v2: phone hardware toolset (termux-api unified channel) ----
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_status',
     description:
       'Snapshot the phone hardware state: battery (percentage/charging/temperature), current screen brightness and mode, '
@@ -489,7 +514,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_sensor_list',
     description:
       'List all sensors available on this phone via termux-sensor -l (Termux:API, Termux uid). '
@@ -511,7 +536,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_sensor_read',
     description:
       'Sample one sensor for a short window through Termux:API (Termux uid). Default window 2 seconds, hard cap 10 seconds; '
@@ -536,7 +561,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_camera_photo',
     description:
       'Take one photo with the rear camera via termux-camera-photo -c 0 and save it to ~/dsh-shots/photo-<timestamp>.jpg '
@@ -563,7 +588,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_mic_record',
     description:
       'Record microphone audio to ~/dsh-shots/rec-<timestamp>.m4a via termux-microphone-record (Termux:API, Termux uid). '
@@ -593,7 +618,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_speak',
     description:
       'Speak text aloud through the system TTS engine via termux-tts-speak (Termux:API, Termux uid). '
@@ -612,7 +637,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_play_media',
     description:
       'Control media playback on the phone via termux-media-player (Termux:API, Termux uid). '
@@ -636,7 +661,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_volume',
     description:
       'Read or set Android volume levels via termux-volume (Termux:API, Termux uid). No args reads every stream; stream only reads that '
@@ -675,37 +700,65 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_location',
     description:
-      'Get a one-shot location fix via termux-location (Termux:API, Termux uid). Tries GPS first and automatically falls back to the network provider '
-      + 'when GPS fails or times out. Budget: 45s GPS, 20s network fallback (termux-location has no -u flag, so the tool timeout is the budget). '
-      + 'Returns latitude/longitude, accuracy in meters and the provider used. com.termux.api needs ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION; '
-      + 'the first fix after a permission grant can be slow.',
+      'Get the device location via termux-location (Termux:API, Termux uid). First tries the cached last-known fix (instant), then a single GPS fix with '
+      + 'network fallback. Budget: up to 45s GPS + 20s network (termux-location has no -u flag). Returns latitude/longitude, accuracy and provider, or a '
+      + 'diagnostic error when no fix is available. Known limitation: on Android 14+ Termux:API single-update requests can be killed before a cold fix '
+      + 'arrives (termux-api issue 776) — cached last-known usually works, otherwise the phone needs location enabled and a quick GPS lock '
+      + '(near a window/outdoors). com.termux.api needs ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION.',
     parameters: {
       provider: { type: 'string', enum: ['gps', 'network'], description: 'Preferred provider (default gps with automatic network fallback).' },
     },
     output: { schema: { type: 'json' }, render: renderJson },
-    timeoutMs: 90000,
+    timeoutMs: 120000,
     async execute(args, exec) {
       const pref = args.provider ?? 'gps'
-      // termux-location has no -u timeout flag; the tool timeout below is the budget (45s GPS, 20s network fallback).
+      const alt = pref === 'gps' ? 'network' : 'gps'
+      const validFix = (res) => {
+        const info = tryJson(res.stdout)
+        return res.ok && info !== undefined && info.latitude !== undefined && info.longitude !== undefined ? info : undefined
+      }
+      const toResult = (res, provider, source) => {
+        const info = validFix(res)
+        if (info === undefined) return undefined
+        return { ok: true, provider, source, latitude: info.latitude, longitude: info.longitude, accuracy: info.accuracy ?? null, bearing: info.bearing ?? null, speed: info.speed ?? null, raw: info }
+      }
+      // 1. cached last-known fix (instant; works even when the single-update path cannot complete)
+      for (const p of [pref, alt]) {
+        const last = await termux('termux-location -p ' + shq(p) + ' -r last', 10000, exec.signal)
+        const hit = toResult(last, p, 'last-known')
+        if (hit) return hit
+      }
+      // 2. single update: preferred provider, then fallback
       let res = await termux('termux-location -p ' + shq(pref) + ' -r once', 45000, exec.signal)
       let provider = pref
-      if (!res.ok || tryJson(res.stdout) === undefined) {
-        const alt = pref === 'gps' ? 'network' : 'gps'
+      let hit = toResult(res, provider, 'single')
+      if (hit === undefined) {
         res = await termux('termux-location -p ' + alt + ' -r once', 20000, exec.signal)
         provider = alt
+        hit = toResult(res, provider, 'single')
       }
-      const info = tryJson(res.stdout) ?? {}
-      if (res.ok && info.latitude !== undefined && info.longitude !== undefined) {
-        return { ok: true, provider, latitude: info.latitude, longitude: info.longitude, accuracy: info.accuracy ?? null, bearing: info.bearing ?? null, speed: info.speed ?? null, raw: info }
+      if (hit) return hit
+      // 3. report actionable diagnostics instead of a bare timeout
+      let locationMode = null
+      const modeRes = await run('/system/bin/settings get secure location_mode', { timeout: 10000, signal: exec.signal })
+      const modeMatch = modeRes.stdout.match(/^\s*(\d+)\s*$/)
+      if (modeMatch) locationMode = Number(modeMatch[1])
+      return {
+        ok: false,
+        provider,
+        locationMode,
+        error: (res.stderr + ' ' + res.stdout).trim().slice(-1500) || 'location unavailable: no cached fix and single-update did not return a fix',
+        hint: locationMode === 0
+          ? 'system location is OFF — enable location (location_mode 3) and retry; cold GPS fix works best near a window/outdoors'
+          : 'system location is ON but no fix arrived (Android 14+ Termux:API single-update can be killed before a cold fix; try near a window/outdoors or after Maps has cached a location)',
       }
-      return { ok: false, provider, error: (res.stderr + ' ' + res.stdout).trim().slice(-1500) || 'location unavailable' }
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_brightness',
     description:
       'Read or set the system screen brightness. Read returns the current value and brightness mode; write forces manual mode '
@@ -739,7 +792,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_wakelock',
     description:
       'Acquire or release a CPU wakelock through the Termux app service (am startservice com.termux.service_wake_lock / _unlock on '
@@ -760,7 +813,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_screen_off',
     description:
       'Turn the screen off by pressing the power key through the root/Shizuku input channel. Only presses POWER while the screen is awake, '
@@ -778,7 +831,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_vibrate',
     description:
       'Vibrate the phone for a short duration via termux-vibrate (Termux:API, Termux uid). Default 1000ms, max 5000ms. '
@@ -795,7 +848,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_notify',
     description:
       'Post an Android notification via termux-notification (Termux:API, Termux uid). Requires POST_NOTIFICATIONS on com.termux.api (Android 13+). '
@@ -823,7 +876,7 @@ export function apply(ctx) {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'android_confirm_dialog',
     description:
       'Show a confirm dialog on the phone screen via termux-dialog confirm (Termux:API, Termux uid) and wait for the person to tap yes/no. '
