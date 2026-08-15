@@ -89,6 +89,27 @@ LD_PRELOAD=/system/lib64/liblzma.so:/system/lib64/libz.so 重试。
 ### 设置面板挤成一列
 移动端已改为「顶部横向导航 + 内容全宽」。同上更新 client.js 后刷新。
 
+### Root 版 android_install_apk / android_list_packages 失败（Failed transaction）
+DSH 进程 PATH 会让 root shell 命中 Termux 的 `pm` 包装脚本，PackageManager 调用可能失败。
+临时方案：让 agent 改用 `android_shell` 执行 `/system/bin/pm ...` 或 `cmd package ...`。
+（v0.2.5 已知问题，计划在后续版本统一 root 通道 PATH。）
+
+### 拍照返回成功但文件是 0 字节 / 剪贴板读回空 / confirm 弹窗不出现
+Android 14 后台限制：`android_camera_photo`、`android_confirm_dialog`、`android_clipboard`
+需要 Termux:API 处于前台。临时方案：调用前让
+`com.termux.api/.activities.TermuxAPILauncherActivity` 到前台，再执行工具。
+
+### 录音完成后立刻播放提示 Prepare failed
+`android_mic_record` 的 CLI 会提前退出，录音仍在后台写文件。录音后等 1–3 秒再播放；
+或确认文件大小不再变化后再交给 `android_play_media`。
+
+### 覆盖安装新 APK 后没有新增工具
+旧 DSH 仍在运行时，App 可能直接进入界面而不会刷新 Termux 侧 payload。
+临时方案：清空 DSH Phone App 数据后重新一键部署（Termux 环境与 `~/.dsh-api-key` 保留，
+重新部署时会复用）；计划在后续版本检测版本变化后强制重部署。
+
+
+
 ## 通用三板斧
 
 ```bash
