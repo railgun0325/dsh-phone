@@ -81,3 +81,19 @@ App 部署日志打印授权结果明细；README/向导加一句：为支持 ag
 - termux-api 0.53（内置）与 0.59（apt 最新）行为兼容
 - 用户接受部署时静默授予清单内权限（向导明示）
 - 主模型 DeepSeek 文本
+
+## 十一、实施修正（2026-08-15，按内置包实际源码核实）
+
+对第 2/3 节做以下修正（均以 termux-api-package v0.59.1 脚本与 Termux:API v0.53 源码为准，v0.59.1 与 master 脚本逐字节一致）：
+
+1. **无 termux-wake-lock 命令**：当前 Termux 仓库与 Termux:API 0.53 都不再提供该脚本。
+   android_wakelock 改为 `am startservice --user 0 -a com.termux.service_wake_lock|_unlock com.termux/com.termux.app.TermuxService`，
+   由 Termux 应用（0.118.3，声明 WAKE_LOCK）自身的 TermuxService 持有 PARTIAL_WAKE_LOCK。
+2. **termux-location 无 `-u` 参数**：传 `-u` 会直接报 illegal option。android_location 改为纯
+   `-p <provider> -r once`，由工具超时充当预算（GPS 45s，network 回退 20s）。
+3. **termux-volume 不支持单流读取**：只传 stream 会报 Invalid argument count。android_volume 改为
+   无参读取全部流后在插件内过滤；写入仍为 `termux-volume <stream> <level>`。
+4. **授权清单收敛**：Termux:API 0.53 targetSdk=28，manifest 未声明 POST_NOTIFICATIONS / WAKE_LOCK /
+   MODIFY_AUDIO_SETTINGS，逐项 pm grant 必失败。部署只授 CAMERA、RECORD_AUDIO、
+   ACCESS_FINE_LOCATION、ACCESS_COARSE_LOCATION；通知默认放行、震动安装期授予、wakelock 归 Termux 应用。
+5. **sensor list 返回 JSON**：`termux-sensor -l` 输出 `{"sensors":["..."]}`，插件按 JSON 解析并保留文本回退。

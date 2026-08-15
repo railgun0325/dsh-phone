@@ -29,10 +29,10 @@ DSH 插件：给 agent 一双操作安卓的「手」，外加手机竖屏布局
 | android_mic_record | 麦克风录音（默认 5s、上限 60s；锁屏/后台可能静音） | ~/dsh-shots/rec-*.m4a |
 | android_speak | 系统 TTS 朗读（中文用系统 TTS 引擎） | - |
 | android_play_media | media player play / stop / info | - |
-| android_volume | 音量读写（call/system/ring/music/alarm/notification） | - |
-| android_location | 一次定位（gps 优先，失败自动 network 回退，约 60s 预算） | - |
+| android_volume | 音量读写（读全流；单流读取由插件过滤，写入走 termux-volume） | - |
+| android_location | 一次定位（gps 优先，失败自动 network 回退；工具超时即预算，无 -u 参数） | - |
 | android_brightness | 亮度读写（写时强制手动亮度模式；root=su / Shizuku=shell 桥） | - |
-| android_wakelock | CPU wakelock 获取 / 释放（长任务基础件） | - |
+| android_wakelock | Termux 应用 TermuxService wakelock 获取 / 释放（长任务基础件） | - |
 | android_screen_off | 按电源键灭屏（仅屏幕亮着时按下，不会误唤醒） | - |
 | android_vibrate | 震动（默认 1s、上限 5s） | - |
 | android_notify | 通知（标题/内容，预留按钮动作——按钮动作是 Termux 内 shell，务必简单安全） | - |
@@ -48,17 +48,22 @@ DSH 插件：给 agent 一双操作安卓的「手」，外加手机竖屏布局
 X-DSH-Cmd / X-DSH-Timeout，body 为 stdin，响应 JSON {ok,exitCode,stdout,stderr}）。
 桥由 DSH Phone App（Shizuku 版）的前台服务提供；token 部署时写入 ~/.dsh-bridge-token。
 
-## 硬件工具所需权限（com.termux.api）
+## 硬件工具所需权限
 
-部署脚本会静默授予以下运行时权限并做 Doze 电池豁免，App 部署日志打印逐项结果：
+部署脚本会给 **com.termux.api** 授予其声明的 4 个运行时危险权限，并做 Doze 电池豁免；App 部署日志打印逐项结果：
 
 - CAMERA（拍照）
 - RECORD_AUDIO（录音）
 - ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION（定位）
-- POST_NOTIFICATIONS（通知，Android 13+）
 
-安装期即自动授予的普通权限：WAKE_LOCK（wakelock）、VIBRATE（震动）、MODIFY_AUDIO_SETTINGS（音量）。
-亮度写入走 shell 级 WRITE_SETTINGS（Shizuku 版已查证 shell 持有该权限；Root 版走 su）。
+其它权限的实际情况（已按内置 Termux:API 0.53 的 manifest 核实）：
+
+- 通知：Termux:API targetSdk=28，无需 POST_NOTIFICATIONS（系统默认放行）
+- wakelock：走 **com.termux 应用自身的 TermuxService**（`com.termux.service_wake_lock/_unlock`），WAKE_LOCK 随 Termux APK 安装授予；当前 Termux 已不带旧的 termux-wake-lock 脚本
+- 震动：VIBRATE 是 Termux:API 的普通权限，安装时自动授予
+- 音量：termux-volume 实测无需额外授权（Termux:API 0.53 未声明 MODIFY_AUDIO_SETTINGS）
+- 亮度：shell 级 WRITE_SETTINGS（Shizuku 版已查证 shell 持有；Root 版走 su）
+
 Shizuku 版授权回退链：pm grant → cmd appops set → 仍失败则部署日志提示用户到 Termux:API 应用详情页手动开（一次终身）。
 
 ## 移动端布局（client 半）

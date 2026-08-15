@@ -493,16 +493,21 @@ export function apply(ctx) {
     name: 'android_sensor_list',
     description:
       'List all sensors available on this phone via termux-sensor -l (Termux:API, Termux uid). '
-      + 'Returns name/type lines; use the exact sensor name with android_sensor_read. No dangerous permission required.',
+      + 'Returns the JSON sensor-name array from Termux:API; names are accepted by android_sensor_read (partial names work too). '
+      + 'No dangerous permission required.',
     parameters: {},
     output: { schema: { type: 'json' }, render: renderJson },
     timeoutMs: 20000,
     async execute(args, exec) {
       const res = await termux('termux-sensor -l', 15000, exec.signal)
+      const parsed = tryJson(res.stdout)
+      if (res.ok && parsed !== undefined && Array.isArray(parsed.sensors)) {
+        return { ok: true, count: parsed.sensors.length, sensors: parsed.sensors }
+      }
       const lines = res.stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
-      return res.ok
+      return res.ok && lines.length
         ? { ok: true, count: lines.length, sensors: lines.slice(0, 200) }
-        : { ok: false, error: (res.stderr || 'termux-sensor -l failed').trim().slice(-1000) }
+        : { ok: false, error: (res.stderr || res.stdout || 'termux-sensor -l failed').trim().slice(-1000) }
     },
   }))
 
@@ -634,9 +639,9 @@ export function apply(ctx) {
   ctx.tools.register(defineTool({
     name: 'android_volume',
     description:
-      'Read or set Android volume levels via termux-volume (Termux:API, Termux uid). No args reads every stream; stream only reads that stream; '
-      + 'stream + level sets it. Valid streams: call, system, ring, music, alarm, notification. Level is an integer accepted by Termux '
-      + '(music typically 0-15, alarm 0-7).',
+      'Read or set Android volume levels via termux-volume (Termux:API, Termux uid). No args reads every stream; stream only reads that '
+      + 'stream (filtered client-side — termux-volume has no single-stream read mode); stream + level sets it. Valid streams: call, system, '
+      + 'ring, music, alarm, notification. Level is an integer accepted by Termux (music typically 0-15, alarm 0-7).',
     parameters: {
       stream: { type: 'string', enum: ['call', 'system', 'ring', 'music', 'alarm', 'notification'], description: 'Audio stream (optional; omit to read all).' },
       level: { type: 'integer', description: 'Volume level to set (requires stream).' },
@@ -645,12 +650,26 @@ export function apply(ctx) {
     timeoutMs: 20000,
     async execute(args, exec) {
       if (args.level !== undefined && args.stream === undefined) return { ok: false, error: 'stream is required when setting a level' }
-      const cmd = args.stream === undefined
-        ? 'termux-volume'
-        : 'termux-volume ' + args.stream + (args.level === undefined ? '' : ' ' + args.level)
-      const res = await termux(cmd, 15000, exec.signal)
+      const pick = (volumes) => {
+        if (args.stream === undefined) return volumes
+        if (Array.isArray(volumes)) {
+          const hit = volumes.find(v => v !== null && typeof v === 'object' && v.stream === args.stream)
+          return hit ?? volumes
+        }
+        if (volumes !== null && typeof volumes === 'object' && volumes[args.stream] !== undefined) return volumes[args.stream]
+        return volumes
+      }
+      if (args.stream !== undefined && args.level !== undefined) {
+        const setRes = await termux('termux-volume ' + args.stream + ' ' + args.level, 15000, exec.signal)
+        if (!setRes.ok) return { ok: false, stream: args.stream, level: args.level, error: (setRes.stderr + setRes.stdout).trim().slice(-1000) || 'termux-volume set failed' }
+        const readRes = await termux('termux-volume', 15000, exec.signal)
+        const volumes = tryJson(readRes.stdout) ?? readRes.stdout.trim()
+        return { ok: true, stream: args.stream, level: args.level, volumes: pick(volumes) }
+      }
+      const res = await termux('termux-volume', 15000, exec.signal)
+      const volumes = tryJson(res.stdout) ?? res.stdout.trim()
       return res.ok
-        ? { ok: true, stream: args.stream ?? null, level: args.level ?? null, volumes: tryJson(res.stdout) ?? res.stdout.trim() }
+        ? { ok: true, stream: args.stream ?? null, level: args.level ?? null, volumes: pick(volumes) }
         : { ok: false, error: (res.stderr + res.stdout).trim().slice(-1000) || 'termux-volume failed' }
     },
   }))
@@ -659,8 +678,9 @@ export function apply(ctx) {
     name: 'android_location',
     description:
       'Get a one-shot location fix via termux-location (Termux:API, Termux uid). Tries GPS first and automatically falls back to the network provider '
-      + 'when GPS fails or times out. Total budget about 60 seconds (45s GPS + 15s network). Returns latitude/longitude, accuracy in meters and the provider used. '
-      + 'com.termux.api needs ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION; the first fix after a permission grant can be slow.',
+      + 'when GPS fails or times out. Budget: 45s GPS, 20s network fallback (termux-location has no -u flag, so the tool timeout is the budget). '
+      + 'Returns latitude/longitude, accuracy in meters and the provider used. com.termux.api needs ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION; '
+      + 'the first fix after a permission grant can be slow.',
     parameters: {
       provider: { type: 'string', enum: ['gps', 'network'], description: 'Preferred provider (default gps with automatic network fallback).' },
     },
@@ -668,11 +688,12 @@ export function apply(ctx) {
     timeoutMs: 90000,
     async execute(args, exec) {
       const pref = args.provider ?? 'gps'
-      let res = await termux('termux-location -p ' + shq(pref) + ' -r once -u 40000', 45000, exec.signal)
+      // termux-location has no -u timeout flag; the tool timeout below is the budget (45s GPS, 20s network fallback).
+      let res = await termux('termux-location -p ' + shq(pref) + ' -r once', 45000, exec.signal)
       let provider = pref
       if (!res.ok || tryJson(res.stdout) === undefined) {
         const alt = pref === 'gps' ? 'network' : 'gps'
-        res = await termux('termux-location -p ' + alt + ' -r once -u 15000', 20000, exec.signal)
+        res = await termux('termux-location -p ' + alt + ' -r once', 20000, exec.signal)
         provider = alt
       }
       const info = tryJson(res.stdout) ?? {}
@@ -720,9 +741,10 @@ export function apply(ctx) {
   ctx.tools.register(defineTool({
     name: 'android_wakelock',
     description:
-      'Acquire or release a CPU wakelock through termux-wake-lock (Termux:API, Termux uid). Acquire before long-running background work '
-      + '(downloads, sensor sampling, file processing) so the OS is less likely to suspend the phone; release afterwards. '
-      + 'com.termux.api holds the WAKE_LOCK permission.',
+      'Acquire or release a CPU wakelock through the Termux app service (am startservice com.termux.service_wake_lock / _unlock on '
+      + 'com.termux/.app.TermuxService, run as the Termux uid). Termux v0.118+ holds the wakelock in its own TermuxService with the WAKE_LOCK '
+      + 'permission declared by the Termux app — current Termux builds no longer ship the old termux-wake-lock script. Acquire before long-running '
+      + 'background work (downloads, sensor sampling, file processing); release afterwards.',
     parameters: {
       action: { type: 'string', enum: ['acquire', 'release'], description: 'acquire (default) or release the wakelock.' },
     },
@@ -730,8 +752,10 @@ export function apply(ctx) {
     timeoutMs: 15000,
     async execute(args, exec) {
       const release = args.action === 'release'
-      const res = await termux(release ? 'termux-wake-lock -r' : 'termux-wake-lock', 10000, exec.signal)
-      return { ok: res.ok, held: !release, error: res.ok ? undefined : res.stderr.trim() }
+      const intent = release ? 'com.termux.service_wake_unlock' : 'com.termux.service_wake_lock'
+      const res = await termux('am startservice --user 0 -a ' + intent + ' com.termux/com.termux.app.TermuxService', 10000, exec.signal)
+      const noise = (res.stderr + res.stdout).trim().slice(-1000)
+      return { ok: res.ok, held: !release, note: noise || undefined, error: res.ok ? undefined : (noise || 'Termux wake service call failed') }
     },
   }))
 
@@ -819,6 +843,9 @@ export function apply(ctx) {
       const res = await termux(cmd, timeout + 10000, exec.signal)
       const parsed = tryJson(res.stdout)
       if (res.ok && parsed !== undefined) {
+        if (parsed.code === -1) {
+          return { ok: false, answered: false, dismissed: true, answer: parsed.text ?? 'dismissed', error: undefined }
+        }
         const answer = typeof parsed.text === 'string' ? parsed.text : JSON.stringify(parsed)
         return { ok: true, answered: true, answer, code: parsed.code }
       }

@@ -69,7 +69,7 @@ public class MainActivity extends WizardActivity {
         installApk(bootApk, 120000);
         log("安装 Termux:API…");
         installApk(apiApk, 120000);
-        log("部署将给 Termux:API 授予相机/麦克风/定位/通知等硬件权限（系统隐私指示灯全程可见，逐项结果见下方 setup 日志）…");
+        log("部署将给 Termux:API 授予相机/麦克风/定位等硬件权限（系统隐私指示灯全程可见，逐项结果见下方 setup 日志）…");
 
         log("写入 payload 到 /data/local/tmp/dsh-stage…");
         transferPayload(payload, uid);

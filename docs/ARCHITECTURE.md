@@ -54,12 +54,14 @@ package.json 的 exports 必须含 ./package.json（否则 loader 扫描不到 d
 - **DSH 自身 shell 服务**：web profile 用 bash-local（子进程 spawn，无 PTY），保证会话创建不被 bash 工具卡死
 
 ### 2.1 硬件工具通道（v0.2.5，方案 A）
-- termux-* 命令（battery/sensor/camera/mic/tts/media/volume/location/wake-lock/vibrate/notify/dialog）
+- termux-* 命令（battery/sensor/camera/mic/tts/media/volume/location/vibrate/notify/dialog）
   一律 `run(cmd, { root: false })`：插件进程即 com.termux uid，直接调 Termux:API，root 不参与。
+- wakelock 是例外：当前 Termux 已不带 termux-wake-lock 脚本，改走 com.termux 应用自身的
+  TermuxService（`am startservice -a com.termux.service_wake_lock/_unlock`）。
 - brightness/screen_off 等 settings/input 类走默认 root 通道：root 版 su 直通；Shizuku 版桥回退（adb shell 级）。
-- 权限对象是 com.termux.api（不是 DSH Phone App）：运行时权限 CAMERA / RECORD_AUDIO /
-  ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION / POST_NOTIFICATIONS；普通权限 WAKE_LOCK / VIBRATE /
-  MODIFY_AUDIO_SETTINGS 随安装自动授予；Doze 电池豁免防止 MIUI 冻结 Termux:API。
+- 权限对象：com.termux.api 声明并需授予的运行时权限只有 CAMERA / RECORD_AUDIO /
+  ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION；通知因 targetSdk=28 无需 POST_NOTIFICATIONS；
+  VIBRATE 随安装授予；Doze 电池豁免防止 MIUI 冻结 Termux:API。
 - 模型边界：DeepSeek 文本模型看不懂照片、听不懂录音；拍照/录音用于给用户看/播，视觉闭环留待可选 vision 模型。
 
 ### 3. Shizuku 桥（未 root 手机）

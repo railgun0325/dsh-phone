@@ -89,10 +89,11 @@ To operate from a PC: adb forward tcp:3081 tcp:3080, then browse http://127.0.0.
 
 ## Hardware permissions (v0.2.5)
 
-To let the agent use the camera / microphone / location / notifications, one-tap deployment grants **Termux:API** (not the DSH Phone app) these permissions and exempts it from battery optimization; the app's deploy log prints every grant result and Android's privacy indicators remain visible:
+To let the agent use the camera / microphone / location, one-tap deployment grants **Termux:API** its four declared runtime permissions (CAMERA, RECORD_AUDIO, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION) and exempts it from battery optimization; the app's deploy log prints every grant result and Android's privacy indicators remain visible:
 
-- Runtime permissions (granted during deploy): CAMERA, RECORD_AUDIO, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, POST_NOTIFICATIONS
-- Install-time normal permissions (granted automatically with the APK): WAKE_LOCK, VIBRATE, MODIFY_AUDIO_SETTINGS
+- Notifications: Termux:API targets SDK 28, so POST_NOTIFICATIONS is not required — the system allows them by default
+- Wakelock: held by **the Termux app's own TermuxService** (`com.termux.service_wake_lock`); WAKE_LOCK ships with the Termux APK (the old termux-wake-lock script no longer exists in current Termux packages)
+- Vibration: VIBRATE is a normal permission of Termux:API, granted at install time
 - Root edition: granted via su; Shizuku edition: shell-level pm grant → cmd appops fallback → on failure the deploy log asks you to enable it once in the Termux:API app details
 
 > Model limits: the DeepSeek text model **cannot see photos or hear recordings** — they are for you to view/play; an agent vision loop is deferred to an optional vision model (not in this release).

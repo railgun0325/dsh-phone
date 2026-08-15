@@ -120,7 +120,7 @@ public class MainActivity extends WizardActivity {
             pmInstallQuiet(new File(files, "termux-boot.apk"));
             pmInstallQuiet(new File(files, "termux-api.apk"));
         }
-        log("  部署将给 Termux:API 授予相机/麦克风/定位/通知等硬件权限（系统隐私指示灯全程可见，逐项结果见下方 setup 日志）…");
+        log("  部署将给 Termux:API 授予相机/麦克风/定位等硬件权限（系统隐私指示灯全程可见，逐项结果见下方 setup 日志）…");
 
         // f. monkey launch + bootstrap
         step("[6/12] 启动 Termux 完成 bootstrap…");

@@ -134,6 +134,8 @@ EOF
   echo "[step] grant Termux:API hardware permissions via Shizuku bridge (adb shell level)"
   # 桥 = App 内 127.0.0.1:36527/exec，命令经 ShizukuExec 以 adb shell 级执行。
   # 回退链：pm grant -> cmd appops set -> 部署日志提示用户到 Termux:API 详情页手动开（一次终身）。
+  # 0.53 版 Termux:API 只声明这 4 个危险权限；通知 targetSdk=28 无需 POST_NOTIFICATIONS；
+  # wakelock 走 Termux 应用自身 TermuxService（WAKE_LOCK 随 Termux 安装授予）；震动随安装授予。
   # token 优先取本次部署传入的 env；手动重跑时回退读 ~/.dsh-bridge-token。
   BRIDGE_TOKEN="${DSH_BRIDGE_TOKEN:-$(cat "$HOME/.dsh-bridge-token" 2>/dev/null || true)}"
   bridge_exec() {
@@ -142,7 +144,7 @@ EOF
       -H "x-dsh-cmd: $1" \
       -H "x-dsh-timeout-ms: 30000"
   }
-  API_RUNTIME_PERMS="android.permission.CAMERA android.permission.RECORD_AUDIO android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.POST_NOTIFICATIONS"
+  API_RUNTIME_PERMS="android.permission.CAMERA android.permission.RECORD_AUDIO android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION"
   for P in $API_RUNTIME_PERMS; do
     if echo "$(bridge_exec "pm grant com.termux.api $P")" | grep -q '"exitCode":0'; then
       echo "[ok] pm grant com.termux.api $P"
@@ -153,7 +155,6 @@ EOF
       android.permission.RECORD_AUDIO) OP=RECORD_AUDIO ;;
       android.permission.ACCESS_FINE_LOCATION) OP=FINE_LOCATION ;;
       android.permission.ACCESS_COARSE_LOCATION) OP=COARSE_LOCATION ;;
-      android.permission.POST_NOTIFICATIONS) OP=POST_NOTIFICATION ;;
       *) OP="" ;;
     esac
     if [ -n "$OP" ] && echo "$(bridge_exec "cmd appops set com.termux.api $OP allow")" | grep -q '"exitCode":0'; then
@@ -162,7 +163,9 @@ EOF
       echo "[manual] 请手动授予 com.termux.api 的 $P（系统设置 → 应用 → Termux:API → 权限），一次即可终身有效"
     fi
   done
-  echo "[ok] 安装期权限 WAKE_LOCK / VIBRATE / MODIFY_AUDIO_SETTINGS 已随 APK 安装授予"
+  echo "[ok] 通知无需授权：Termux:API targetSdk=28，系统默认放行通知"
+  echo "[ok] wakelock 走 com.termux TermuxService（WAKE_LOCK 已随 Termux 安装授予）"
+  echo "[ok] 震动 VIBRATE 已随 Termux:API 安装自动授予"
   if echo "$(bridge_exec "dumpsys deviceidle whitelist +com.termux.api")" | grep -q '"exitCode":0'; then
     echo "[ok] 电池豁免 deviceidle whitelist +com.termux.api"
   else

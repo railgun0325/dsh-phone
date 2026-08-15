@@ -92,10 +92,11 @@
 
 ## 硬件权限说明（v0.2.5）
 
-为支持 agent 调用摄像头/麦克风/定位/通知等硬件能力，一键部署会给 **Termux:API**（不是 DSH Phone App）授予以下权限，并做电池豁免防止后台被冻结；App 部署日志会逐项打印授权结果，系统隐私指示灯全程可见：
+为支持 agent 调用摄像头/麦克风/定位等硬件能力，一键部署会给 **Termux:API** 授予其声明的 4 个运行时权限（CAMERA、RECORD_AUDIO、ACCESS_FINE_LOCATION、ACCESS_COARSE_LOCATION），并做电池豁免防止后台被冻结；App 部署日志逐项打印授权结果，系统隐私指示灯全程可见：
 
-- 运行时权限（部署时静默授予）：CAMERA、RECORD_AUDIO、ACCESS_FINE_LOCATION、ACCESS_COARSE_LOCATION、POST_NOTIFICATIONS
-- 安装期普通权限（装 APK 即自动授予）：WAKE_LOCK、VIBRATE、MODIFY_AUDIO_SETTINGS
+- 通知：Termux:API targetSdk=28，无需 POST_NOTIFICATIONS，系统默认放行
+- wakelock：由 **com.termux 应用自身的 TermuxService** 持有（WAKE_LOCK 随 Termux 安装授予）
+- 震动：VIBRATE 为 Termux:API 普通权限，安装时自动授予
 - Root 版：su 直授；Shizuku 版：shell 级 pm grant → cmd appops 回退 → 失败则在日志提示到 Termux:API 应用详情页手动开（一次终身）
 
 > 模型能力边界：DeepSeek 文本模型**看不懂照片、听不懂录音**。拍照/录音是给用户查看/播放用的；agent 视觉闭环待后续可选配置 vision 模型（本次不实现）。

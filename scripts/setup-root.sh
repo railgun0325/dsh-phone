@@ -114,10 +114,11 @@ EOF
     echo "[skip] DEEPSEEK_API_KEY not set"
   fi
 
-  echo "[step] grant Termux:API hardware permissions (camera/mic/location/notification)"
+  echo "[step] grant Termux:API hardware permissions (camera/mic/location)"
   # 硬件工具（plugin v2）依赖 Termux:API 的运行时权限；逐项 pm grant，幂等可重跑。
-  # WAKE_LOCK/VIBRATE/MODIFY_AUDIO_SETTINGS 是安装期普通权限，装 APK 时即自动授予。
-  API_RUNTIME_PERMS="android.permission.CAMERA android.permission.RECORD_AUDIO android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION android.permission.POST_NOTIFICATIONS"
+  # 0.53 版 Termux:API 只声明了这 4 个危险权限；通知 targetSdk=28 无需 POST_NOTIFICATIONS；
+  # wakelock 走 Termux 应用自身的 TermuxService（WAKE_LOCK 随 Termux 安装授予）；震动随安装授予。
+  API_RUNTIME_PERMS="android.permission.CAMERA android.permission.RECORD_AUDIO android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION"
   for P in $API_RUNTIME_PERMS; do
     if su -c "pm grant com.termux.api $P" 2>/dev/null; then
       echo "[ok] pm grant com.termux.api $P"
@@ -125,7 +126,9 @@ EOF
       echo "[warn] pm grant 失败: $P（可到 Termux:API 应用详情页手动开启，一次终身）"
     fi
   done
-  echo "[ok] 安装期权限 WAKE_LOCK / VIBRATE / MODIFY_AUDIO_SETTINGS 已随 APK 安装授予"
+  echo "[ok] 通知无需授权：Termux:API targetSdk=28，系统默认放行通知"
+  echo "[ok] wakelock 走 com.termux TermuxService（WAKE_LOCK 已随 Termux 安装授予）"
+  echo "[ok] 震动 VIBRATE 已随 Termux:API 安装自动授予"
   if su -c "dumpsys deviceidle whitelist +com.termux.api" 2>/dev/null; then
     echo "[ok] 电池豁免 deviceidle whitelist +com.termux.api"
   else
