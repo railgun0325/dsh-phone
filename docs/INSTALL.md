@@ -39,7 +39,8 @@ adb shell "su <UID> -c 'cd ~/dsh-phone && bash setup-termux.sh'"   # 或改为 s
 > Termux 的 pkg 拒绝 root 执行，所有包管理操作必须用 su <UID> -c 以 termux 应用 uid 跑。
 > MIUI 上 chmod/重定向写 app 数据目录会被拒，统一用 install -m 与 cp。
 
-脚本要点（scripts/setup-root.sh / setup-shizuku.sh）：TUNA 源 → apt 装 nodejs-lts/git/curl 等 →
+脚本要点（scripts/setup-root.sh / setup-shizuku.sh）：apt 镜像回退链（TUNA → USTC → BFSU → 腾讯云 → Termux 官方，403/失败自动换源并强制 IPv4 重试）→
+apt 装 nodejs-lts/git/curl 等 →
 npm registry 换 npmmirror → npm i -g --ignore-scripts @deepseek-ai/dsh → koffi/sharp/node-pty 兼容补丁
 （patch-dsh.mjs）→ 写 web profile cordis.patch.yml。
 

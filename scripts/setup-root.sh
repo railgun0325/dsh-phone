@@ -21,17 +21,60 @@ set -eo pipefail
   fi
 
   if [ -z "$FAST" ]; then
-  echo "[step] write TUNA apt source"
-  cat > "$PREFIX/etc/apt/sources.list" << 'EOF'
-# TUNA mirror (Termux main repo)
-deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main
-EOF
+  echo "[step] configure apt mirrors (TUNA → USTC → BFSU → Tencent → official)"
+  # 403 is a mirror-side rejection (WAF/rate-limit or blocked egress IP), not the
+  # phone being offline. Try each mirror; on failure retry once with forced IPv4.
+  APT_SOURCES="
+https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
+https://mirrors.ustc.edu.cn/termux/apt/termux-main
+https://mirrors.bfsu.edu.cn/termux/apt/termux-main
+https://mirrors.cloud.tencent.com/termux/apt/termux-main
+https://packages-cf.termux.dev/apt/termux-main
+https://packages.termux.dev/apt/termux-main
+"
+  APT_OPTS="-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+  APT_UPDATE_LOG="$TMPDIR/dsh-apt-update.log"
+  APT_PKGS="nodejs-lts git python clang make binutils openssl curl wget termux-api"
+  APT_OK=""
+  # Drop a leftover manual 403 workaround so the fallback chain below can take effect.
+  rm -f "$PREFIX/etc/apt/apt.conf.d/99-dsh-ustc.conf"
 
-  echo "[step] apt-get update"
-  apt-get update
+  try_apt_source() {
+    _URL="$1"
+    _MODE="$2"
+    echo "[step] trying apt source: $_URL${_MODE:+ (force IPv4)}"
+    echo "deb $_URL stable main" > "$PREFIX/etc/apt/sources.list"
+    rm -f "$PREFIX/var/lib/apt/lists"/* 2>/dev/null || true
+    if ! apt-get $APT_OPTS $_MODE update > "$APT_UPDATE_LOG" 2>&1; then
+      cat "$APT_UPDATE_LOG"
+      if grep -q '403' "$APT_UPDATE_LOG"; then
+        echo "[warn] mirror returned 403 (mirror WAF/rate-limit or egress IP blocked); switching mirror"
+      fi
+      return 1
+    fi
+    cat "$APT_UPDATE_LOG"
+    if DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS $_MODE install -y -o Dpkg::Options::=--force-confold $APT_PKGS; then
+      APT_OK="$_URL"
+      return 0
+    fi
+    echo "[warn] update ok but package install failed; switching mirror"
+    return 1
+  }
 
-  echo "[step] install base packages"
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confold nodejs-lts git python clang make binutils openssl curl wget termux-api
+  for APT_URL in $APT_SOURCES; do
+    if try_apt_source "$APT_URL" ""; then
+      break
+    fi
+    if try_apt_source "$APT_URL" "-o Acquire::ForceIPv4=true"; then
+      break
+    fi
+  done
+
+  if [ -z "$APT_OK" ]; then
+    echo "[error] all apt mirrors failed; check Termux network/DNS/IPv6 and retry"
+    exit 1
+  fi
+  echo "[ok] apt packages installed from $APT_OK"
 
   echo "[step] node/npm versions"
   node -v

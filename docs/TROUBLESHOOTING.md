@@ -16,7 +16,18 @@
 
 ### 部署到一半失败
 - 先看 App 日志；再看 Termux 内：tail -50 ~/setup-dsh.log
-- 网络问题（apt/npm 拉不动）：确认手机能上网；脚本已内置 TUNA 源 + npmmirror，一般无需改
+- 网络问题（apt/npm 拉不动）：确认手机能上网；脚本已内置 apt 镜像回退链 + npmmirror，一般无需改
+- apt 报 403 Forbidden（常见于 TUNA）：**这不是手机断网**，而是镜像站 WAF/限流，或当前网络出口 IP 被该镜像封禁（手机浏览器能上网不能排除这种可能）。
+  当前 setup 脚本会按 TUNA → USTC → BFSU → 腾讯云 → Termux 官方自动回退，并在同一镜像上再试一次强制 IPv4。
+  旧版 APK 没有回退逻辑，可在 Termux 里先给 apt 加一个本地源覆盖（旧脚本写的 TUNA 源会被忽略），再回 App 重新部署：
+  ```bash
+  echo "deb https://mirrors.ustc.edu.cn/termux/apt/termux-main stable main" > "$HOME/termux-ustc.list"
+  mkdir -p "$PREFIX/etc/apt/apt.conf.d"
+  printf 'Dir::Etc::sourcelist "%s/termux-ustc.list";\nDir::Etc::sourceparts "-";\n' "$HOME" > "$PREFIX/etc/apt/apt.conf.d/99-dsh-ustc.conf"
+  apt-get update
+  # 然后回到 App 重新点部署（setup 仍会写 TUNA 源，但 apt 实际走上面的 USTC 文件）
+  ```
+  其他可选源：`https://mirrors.bfsu.edu.cn/termux/apt/termux-main`、`https://packages-cf.termux.dev/apt/termux-main`。
 
 ### RUN_COMMAND 一直无响应（Shizuku 版）
 - Termux 未装好/bootstrap 未就绪：App 会每 5 秒重试，最长 4 分钟
@@ -52,7 +63,13 @@ Termux 硬性拒绝 root 跑包管理。用 su <UID> -c '...' 以 termux 应用 
 
 ### pkg 更新时所有镜像都 bad
 新版 pkg 的镜像检测依赖 curl，bootstrap 里没有。先 apt-get install -y curl，或直接 apt-get update。
-国内网络慢/不通时换清华源：deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main
+国内网络慢/不通时可换以下任一同版本仓库（签名相同，可随时互切）：
+```bash
+echo "deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main" > "$PREFIX/etc/apt/sources.list"
+echo "deb https://mirrors.ustc.edu.cn/termux/apt/termux-main stable main" > "$PREFIX/etc/apt/sources.list"
+echo "deb https://packages-cf.termux.dev/apt/termux-main stable main" > "$PREFIX/etc/apt/sources.list"
+```
+若 TUNA 返回 403，优先切 USTC 或 packages-cf；IPv6 路由异常时加 `apt-get -o Acquire::ForceIPv4=true update`。
 
 ### 往 /data/data/com.termux/... 写文件/执行失败（Permission denied）
 - 小米的 root 无法 chmod/重定向写 app 数据目录：用 install -m 644/-755 替代 chmod+cp
