@@ -94,6 +94,37 @@ LD_PRELOAD=/system/lib64/liblzma.so:/system/lib64/libz.so 重试。
 桥（DSH Phone App 的前台服务）没在跑：打开一次 DSH Phone App；开机后也需先开一次（或等开机自启 Receiver 拉起）。
 确认 ~/.dsh-bridge-token 与 App 内 token 一致（部署时自动写好，手动改过才需要核）。
 
+### 发消息一直报错：`DeepSeek API request to https://api.deepseek.com failed` / `code: TRANSPORT`
+现象：会话日志里每次发送都是 `llm/retry` → `"code":"TRANSPORT"`，重试 2 次后
+`turn/end reason:{kind:error}`；同一台手机上浏览器和其它 App 也解析不了域名，但裸 IP
+（如 `curl https://223.5.5.5/`）能通 —— 这不是断网，是**全机 DNS 挂了**。
+根因：`boot-dsh.sh` 把 `:53` 全部 DNAT 到 `127.0.0.1:53`，而 `dns-fwd.mjs` 后来死了
+（2026-09-14 实例：开机约 25 小时后进程消失），重定向却留着 → 所有解析指向无人监听的端口。
+诊断与恢复：
+```bash
+adb shell su -c 'sh /data/adb/service.d/dsh-watchdog.sh status'   # 一眼看全状态
+adb shell su -c 'sh /data/adb/service.d/dsh-watchdog.sh once'     # 立即修一轮
+```
+看门狗（`scripts/dsh-watchdog.sh`，装到 `/data/adb/service.d/`）会在 ≤30 秒内自动拉起
+dns-fwd，并在连拉失败时摘掉 `:53` 重定向（fail open）。注意 fail open 只在「网络自带
+解析器是好的」时有用：本机常用的那个路由器会下发坏掉的 IPv6 DNS（fe80::5），所以真正
+的保护是那 30 秒自愈，不是 fail open。
+
+### 打开 App 白屏，只有一句「DSH 还没起来」
+根因：`WebActivity` 只加载一次 `http://127.0.0.1:3080/`，主框架失败就进 `onReceivedError`
+的静态兜底页 —— 不重试、没有重试按钮；而 App 启动路径（`resumeDsh()` → `startServices()`
+→ `start-dsh.sh`）会 `pkill` 再重启 dsh web，node 启动要 20–30 秒。这一次加载正好落在这个
+空窗里，页面就永久停在兜底页（2026-09-14 实例：03:35:07 加载，03:35:3x 服务才起来）。
+缓解（已落地）：`start-dsh.sh` 在 3080 已健康时**不再重启**；看门狗让 3080 基本总是活的。
+根治（待 APK 重编）：`WebActivity` 改为退避重试 + 兜底页自带自动刷新/重试按钮。
+临时自救：退出 App（最近任务里划掉）再打开一次即可。
+
+### 服务端重启后，已经打开的页面要重载吗？
+不要。客户端是逐请求 HTTP（`POST /api/<method>`），不是长连接：dsh web 换进程后页面里的
+RPC 依然返回 200，实测无需刷新。真正会卡住页面的是 MIUI 把后台 App 冻住（连 CDP 都不响应），
+回到前台即恢复。
+
+
 ### 手机整个断网（DNS 全挂、TCP 数据面 0 字节）
 两种常见元凶：
 1. v2rayNG/Clash 等 VPN 开着但节点死了：am force-stop <包名>，并关掉其开机自启。
