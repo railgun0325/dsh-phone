@@ -10,6 +10,17 @@ export LD_LIBRARY_PATH=$PREFIX/lib
 if [ -f "$HOME/.dsh-api-key" ]; then
   export DEEPSEEK_API_KEY="$(cat "$HOME/.dsh-api-key")"
 fi
+
+# Already serving? Then leave it alone. Restarting a healthy server leaves 3080
+# dark for the ~20-30s node boot, and WebActivity gets exactly one load attempt:
+# that window is the "DSH 还没起来" white page users see. The self-heal below
+# still covers the case where 3080 is genuinely down.
+if pgrep -f 'bin.js web' >/dev/null 2>&1 \
+   && bash -c 'exec 3<>/dev/tcp/127.0.0.1/3080' 2>/dev/null; then
+  echo "dsh web already healthy on 3080 — restart skipped"
+  exit 0
+fi
+
 exec > "$HOME/dsh-web.log" 2>&1
 # Kill any stale dsh web process first: otherwise the new one dies on
 # EADDRINUSE while the old process keeps serving deleted plugin files.

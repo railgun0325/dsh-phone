@@ -21,60 +21,17 @@ set -eo pipefail
   fi
 
   if [ -z "$FAST" ]; then
-  echo "[step] configure apt mirrors (TUNA → USTC → BFSU → Tencent → official)"
-  # 403 is a mirror-side rejection (WAF/rate-limit or blocked egress IP), not the
-  # phone being offline. Try each mirror; on failure retry once with forced IPv4.
-  APT_SOURCES="
-https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
-https://mirrors.ustc.edu.cn/termux/apt/termux-main
-https://mirrors.bfsu.edu.cn/termux/apt/termux-main
-https://mirrors.cloud.tencent.com/termux/apt/termux-main
-https://packages-cf.termux.dev/apt/termux-main
-https://packages.termux.dev/apt/termux-main
-"
-  APT_OPTS="-o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
-  APT_UPDATE_LOG="$TMPDIR/dsh-apt-update.log"
-  APT_PKGS="nodejs-lts git python clang make binutils openssl curl wget termux-api"
-  APT_OK=""
-  # Drop a leftover manual 403 workaround so the fallback chain below can take effect.
-  rm -f "$PREFIX/etc/apt/apt.conf.d/99-dsh-ustc.conf"
+  echo "[step] write TUNA apt source"
+  cat > "$PREFIX/etc/apt/sources.list" << 'EOF'
+# TUNA mirror (Termux main repo)
+deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main
+EOF
 
-  try_apt_source() {
-    _URL="$1"
-    _MODE="$2"
-    echo "[step] trying apt source: $_URL${_MODE:+ (force IPv4)}"
-    echo "deb $_URL stable main" > "$PREFIX/etc/apt/sources.list"
-    rm -f "$PREFIX/var/lib/apt/lists"/* 2>/dev/null || true
-    if ! apt-get $APT_OPTS $_MODE update > "$APT_UPDATE_LOG" 2>&1; then
-      cat "$APT_UPDATE_LOG"
-      if grep -q '403' "$APT_UPDATE_LOG"; then
-        echo "[warn] mirror returned 403 (mirror WAF/rate-limit or egress IP blocked); switching mirror"
-      fi
-      return 1
-    fi
-    cat "$APT_UPDATE_LOG"
-    if DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS $_MODE install -y -o Dpkg::Options::=--force-confold $APT_PKGS; then
-      APT_OK="$_URL"
-      return 0
-    fi
-    echo "[warn] update ok but package install failed; switching mirror"
-    return 1
-  }
+  echo "[step] apt-get update"
+  apt-get update
 
-  for APT_URL in $APT_SOURCES; do
-    if try_apt_source "$APT_URL" ""; then
-      break
-    fi
-    if try_apt_source "$APT_URL" "-o Acquire::ForceIPv4=true"; then
-      break
-    fi
-  done
-
-  if [ -z "$APT_OK" ]; then
-    echo "[error] all apt mirrors failed; check Termux network/DNS/IPv6 and retry"
-    exit 1
-  fi
-  echo "[ok] apt packages installed from $APT_OK"
+  echo "[step] install base packages"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confold nodejs-lts git python clang make binutils openssl curl wget termux-api
 
   echo "[step] node/npm versions"
   node -v
@@ -144,6 +101,21 @@ https://packages.termux.dev/apt/termux-main
   echo "[step] write web profile cordis patch"
   mkdir -p "$HOME/.dsh/profiles/web"
   install -m 644 "$HOME/cordis.patch.yml" "$HOME/.dsh/profiles/web/cordis.patch.yml"
+
+  echo "[step] install dsh-watchdog (root: keeps dns-fwd and dsh web alive)"
+  # Without it a dead dns-fwd leaves the :53 redirect pointing at nothing and the
+  # whole phone loses DNS (DSH turns then fail with TRANSPORT); a killed dsh web
+  # leaves the app's one-shot WebView on the white "DSH 还没起来" page.
+  if [ -f "$HOME/dsh-watchdog.sh" ]; then
+    if su -c "cp $HOME/dsh-watchdog.sh /data/adb/service.d/dsh-watchdog.sh && chmod 755 /data/adb/service.d/dsh-watchdog.sh" 2>/dev/null; then
+      su -c "setsid sh /data/adb/service.d/dsh-watchdog.sh watch >/dev/null 2>&1 &" 2>/dev/null
+      echo "[ok] dsh-watchdog 已安装并在运行（日志 /data/adb/dsh-watchdog.log）"
+    else
+      echo "[warn] dsh-watchdog 安装失败（/data/adb/service.d 不可用？仍是 root 吗）"
+    fi
+  else
+    echo "[warn] payload 里没有 dsh-watchdog.sh（旧 APK？）"
+  fi
 
   echo "[step] write API key"
   if [ -n "$DEEPSEEK_API_KEY" ] && printf '%s' "$DEEPSEEK_API_KEY" | grep -Eq '^sk-[A-Za-z0-9_-]+$'; then
