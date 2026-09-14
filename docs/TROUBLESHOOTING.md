@@ -125,6 +125,34 @@ RPC 依然返回 200，实测无需刷新。真正会卡住页面的是 MIUI 把
 回到前台即恢复。
 
 
+### 升级到 DSH 0.1.5（含 rc.1/rc.2）手机上要过哪几关
+2026-09-14 在 13 Pro 上实测了一遍「0.1.0-rc.6 → 0.1.5-rc.2」，四关都过了才会起来，任何一关不过
+都是**加载期报错或永久空转**（不是慢，是不收敛）：
+
+1. **node-pty 惰性加载**：`patch-dsh.mjs` 的调用点锚点变了 —— 0.1.5 在 `async spawnTerminal(spec)`
+   里 `terminal = nodePty.spawn(scope?.command ?? file, ...)`。脚本已同时兼容两版。
+2. **link→rename**：0.1.5 的 `session-persistence-jsonl` 有三处相关代码，不能只换 import：
+   - `defaultFileSystem` 用 `link` 作**简写属性**（去掉 import 会 ReferenceError）；
+   - `publishCurrentExclusive` 的 `internals.fs.link(staged, currentPath)` 要换成
+     `copyFile(..., COPYFILE_EXCL)`（rename 会搬走调用方还持有的暂存文件）；
+   - 原子发布那处才是 `rename`。另外该文件已从 `node:zlib` 引入 `constants`，
+     fs/promises 的那个必须起别名（`fsConstants`），否则 `Identifier 'constants' has already been declared`。
+3. **sharp**：0.1.5 的 `attachment-local` 在**加载期**就 `import sharp`，而 Android 上 sharp 需要
+   `@img/sharp-wasm32` **加它的依赖 `@emnapi/runtime`**（老树里恰好有，新装的扁平树没有）。
+   少一个就是 `Could not load the "sharp" module using the android-arm64 runtime`。
+4. **客户端打包器（`dsh-client-modules`）**：0.1.5 给每个模块合成「恒等 source map」（把整份源码
+   塞进 `sourcesContent` 再 JSON+Buffer），而且**每次插件注册都会重新 compose 一遍全部 bundle**。
+   手机上 10.8 MB 客户端产物（其中 `dsh-client-ui-sidebar-documentpreview` 单体 6.9 MB）会让
+   boot 永远不收敛：CPU profile 225 秒里 buildCombo 48s、newlineCount 45s、Buffer/utf8Write 62s。
+   `patch-dsh-client-modules.mjs` 做两件事：恒等映射降级成空映射（纯 devtools 数据，执行不变）+
+   把 flush 的微任务合并改成 150ms 防抖。打完 16 秒起来。
+
+**还有一个未解决的集成阻塞**：0.1.5 的 web UI 带 **token 门禁**，启动横幅是
+`dsh web: http://127.0.0.1:3080/?token=…`；不带 token 访问 `/` 返回 401（带 token 是 303 → cookie）。
+APK 里 `WebActivity` 写死加载 `http://127.0.0.1:3080/`，所以直接切到 0.1.5 会看到 401 页面 ——
+要么找到关掉/固定 token 的配置，要么改 APK 让它带着 token 打开（root 版可经 su 读横幅）。
+
+
 ### 手机整个断网（DNS 全挂、TCP 数据面 0 字节）
 两种常见元凶：
 1. v2rayNG/Clash 等 VPN 开着但节点死了：am force-stop <包名>，并关掉其开机自启。
