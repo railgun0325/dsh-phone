@@ -98,6 +98,12 @@ EOF
   node "$HOME/patch-dsh-client-modules.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js" || \
     echo "[warn] client-modules not present (pre-0.1.5 build?) — skipped"
 
+  echo "[step] patch web auth (loopback stays token-free; 0.1.5+ only)"
+  # 0.1.5 gates the UI and /api behind a per-process launch token. The shell WebView
+  # cannot pass it, so loopback would answer 401 forever. LAN still needs the token.
+  node "$HOME/patch-dsh-web-auth.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js" || \
+    echo "[warn] client-connection not present? — skipped"
+
   echo "[step] register dsh-android-control plugin"
   PLUGIN_DIR="$DSH_DIR/node_modules/dsh-android-control"
   mkdir -p "$PLUGIN_DIR/lib"
