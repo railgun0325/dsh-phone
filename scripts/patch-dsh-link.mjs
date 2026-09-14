@@ -1,9 +1,11 @@
 // patch-dsh-link.mjs — Android SELinux denies hardlink(2) to app uids, so the
-// link()-based atomic publish in the DSH stores fails with EACCES and "send
-// message" dies. Rewrite those publish paths to rename()/copy+rename().
+// link()-based publish paths in the DSH stores fail with EACCES and "send
+// message" dies (or, worse, the module fails to load at all). Rewrite those
+// publish paths to rename()/copyFile() while keeping every other `link` binding
+// intact — 0.1.5 also uses `link` as a shorthand property in `defaultFileSystem`.
 //
-// Handles both the 0.1.0-rc.6 shape and the 0.1.5 shape (the call sites moved and
-// there are two of them now: staging publish + immutable alias). Idempotent.
+// Handles the 0.1.0-rc.6 shape and the 0.1.5 shape (extra call sites, longer
+// import list). Idempotent.
 // Usage: node patch-dsh-link.mjs <node_modules/@deepseek-ai dir>
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -14,32 +16,46 @@ if (!base) {
   process.exit(2)
 }
 
-/** Each target lists [anchor, replacement] edits; all hits are replaced. */
+/** Each target lists [anchor, replacement] edits; every hit is replaced. */
 const targets = [
   {
     file: join(base, 'dsh-session-persistence-jsonl/lib/index.js'),
     edits: [
-      ['import { link, mkdir, mkdtemp', 'import { rename, mkdir, mkdtemp'],
-      ['import { link, lstat, mkdir, mkdtemp', 'import { rename, lstat, mkdir, mkdtemp'],
+      // 0.1.5: keep `link` (defaultFileSystem uses it as a shorthand property) and
+      // add `copyFile` for the exclusive-publish rewrite below. `constants` may or
+      // may not already be imported by this build — decide that per file below.
+      // `constants` is already taken by node:zlib in this file, so alias the
+      // fs/promises one instead of colliding with it.
+      [
+        'import { link, lstat, mkdir, mkdtemp',
+        'import { constants as fsConstants, copyFile, link, lstat, mkdir, mkdtemp',
+      ],
+      // 0.1.5 `publishCurrentExclusive`: a hardlink here is denied on Android, and a
+      // rename would consume the staged file the caller still owns — copy with
+      // COPYFILE_EXCL, which preserves the same exclusive-create (EEXIST) contract.
+      [
+        'await internals.fs.link(staged, currentPath);',
+        'await copyFile(staged, currentPath, fsConstants.COPYFILE_EXCL);',
+      ],
+      // The atomic publish itself. rename() consumes the temp file; the follow-up
+      // rm(tmp, { force: true }) tolerates ENOENT.
       ['await link(tmp, finalPath);', 'await rename(tmp, finalPath);'],
-      // rename consumes the temp file; the follow-up rm() already uses force:true.
+      // 0.1.0-rc.6 shape: shorter import list, no defaultFileSystem shorthand.
+      ['import { link, mkdir, mkdtemp', 'import { rename, mkdir, mkdtemp'],
     ],
   },
   {
     file: join(base, 'dsh-attachment-local/lib/index.js'),
     edits: [
       ['import { chmod, link, mkdir', 'import { chmod, copyFile, link, mkdir'],
-      [
-        'await link(temporary, target);',
-        'await rename(temporary, target);',
-      ],
+      ['await link(temporary, target);', 'await rename(temporary, target);'],
       // 0.1.5 staging publish: rename() consumes staged.path, so the trailing
       // unlink must tolerate ENOENT (it used to be a no-op after a hardlink).
       ['await link(staged.path, target);', 'await rename(staged.path, target);'],
       ['\t\tawait unlink(staged.path);', '\t\tawait unlink(staged.path).catch(() => {});'],
-      // 0.1.5 immutable alias: hard-linking a *second* name onto an existing
-      // object cannot be a rename (that would move the original away), so copy
-      // to a sibling temp name and rename it into place — still atomic.
+      // 0.1.5 immutable alias: hard-linking a *second* name onto an existing object
+      // cannot be a rename (that would move the original away), so copy to a
+      // sibling temp name and rename it into place — still atomic.
       ['await link(source, target);', 'await androidAlias(source, target);'],
     ],
   },

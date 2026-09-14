@@ -37,7 +37,7 @@ for a in termux.apk termux-boot.apk termux-api.apk; do
 done
 
 if [ "$FLAVOR" = root ]; then
-  PAYLOAD="setup-root.sh start-dsh.sh boot-dsh.sh dsh-watchdog.sh dns-fwd.mjs patch-dsh.mjs patch-dsh-link.mjs install-api-key.sh cordis.patch.yml"
+  PAYLOAD="setup-root.sh start-dsh.sh boot-dsh.sh dsh-watchdog.sh dns-fwd.mjs patch-dsh.mjs patch-dsh-link.mjs patch-dsh-client-modules.mjs install-api-key.sh cordis.patch.yml"
 else
   [ -s "$ASSETS/shizuku.apk" ] || { echo "missing asset shizuku.apk" >&2; exit 2; }
   for a in shizuku-api.jar shizuku-provider.jar shizuku-aidl.jar shizuku-shared.jar androidx-annotation.jar; do

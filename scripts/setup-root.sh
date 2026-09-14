@@ -90,6 +90,14 @@ EOF
   echo "[step] patch session/attachment publish (link -> rename, Android SELinux denies link)"
   node "$HOME/patch-dsh-link.mjs" "$DSH_DIR/node_modules/@deepseek-ai"
 
+  echo "[step] patch client-modules composer (phone-sized CPU; 0.1.5+ only)"
+  # 0.1.5 synthesises a per-line identity source map per module and recomposes every
+  # client bundle on every plugin registration. On a phone that never converges
+  # (measured: 225s of CPU, UI never renders); this degrades the map to an empty one
+  # and debounces the flush.
+  node "$HOME/patch-dsh-client-modules.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js" || \
+    echo "[warn] client-modules not present (pre-0.1.5 build?) — skipped"
+
   echo "[step] register dsh-android-control plugin"
   PLUGIN_DIR="$DSH_DIR/node_modules/dsh-android-control"
   mkdir -p "$PLUGIN_DIR/lib"
