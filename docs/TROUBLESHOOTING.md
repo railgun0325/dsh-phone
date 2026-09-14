@@ -147,7 +147,18 @@ RPC 依然返回 200，实测无需刷新。真正会卡住页面的是 MIUI 把
    `patch-dsh-client-modules.mjs` 做两件事：恒等映射降级成空映射（纯 devtools 数据，执行不变）+
    把 flush 的微任务合并改成 150ms 防抖。打完 16 秒起来。
 
-**还有一个未解决的集成阻塞**：0.1.5 的 web UI 带 **token 门禁**，启动横幅是
+5. **web 鉴权门禁**：0.1.5 的 index 与 `/api/*` 都要求"每进程随机 launch token → 签名 cookie"，
+   而 App 的 WebView 打开裸 loopback 地址、也没有地址栏可粘 token，会 401。
+   `patch-dsh-web-auth.mjs` 让 **loopback 权威免鉴权**（0.1.5 之前本来就没有鉴权），LAN 仍需 token：
+   - `BrowserAuth.authorizeIndex`（index）
+   - `Connection.requestRejection`（`/api/*`）
+
+**还要注意第三方插件**：手机 profile 里的 `dsh-mnemon@0.1.2` 在 0.1.5 下会让 UI 抛
+`Cannot read properties of undefined (reading 'refreshSnapshot')`（核心 workspace controller 的
+getSnapshot）。Mac 上配 0.1.5 的是 `dsh-mnemon@^0.5.5` —— 升级 mnemon（以及 super-injector）
+是切到 0.1.5 的前置条件。
+
+**历史上的集成阻塞（已由上面的补丁解决）**：0.1.5 的 web UI 带 **token 门禁**，启动横幅是
 `dsh web: http://127.0.0.1:3080/?token=…`；不带 token 访问 `/` 返回 401（带 token 是 303 → cookie）。
 APK 里 `WebActivity` 写死加载 `http://127.0.0.1:3080/`，所以直接切到 0.1.5 会看到 401 页面 ——
 要么找到关掉/固定 token 的配置，要么改 APK 让它带着 token 打开（root 版可经 su 读横幅）。
