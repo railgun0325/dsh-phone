@@ -205,6 +205,14 @@ APK 里 `WebActivity` 写死加载 `http://127.0.0.1:3080/`，所以直接切到
   0.5.10 三个拼写（`sidebar`/`builtin`/`buildin`）都认，所以升上去不用动，回滚要改回 `buildin`。
 - 别在真实 home 上试新版：用 `cp -a ~/.dsh ~/h015-real` 克隆一份来演练（`tools/phone-probes/` 里有现成脚本）。
 
+### `dsh --profile headless` 在真实 home 上起不来（ERR_MODULE_NOT_FOUND: dsh-android-control）
+home 级 `~/.dsh/cordis.patch.yml` 里的 `insert: dsh-android-control` 会作用到**每一个** profile，
+但这个包只装在 `profiles/web/node_modules` 里，所以 headless 一定死在
+`Cannot find package 'dsh-android-control' imported from ~/.dsh/profiles/headless/`。
+这与 DSH 版本无关（0.1.0 时同样如此），只是别拿它当升级验收。
+验收用 `tools/phone-probes/verify-turn.mjs <port> <home>`：走 web API 建会话发一句话，
+看 `sessionStats.turns >= 1`。
+
 ### 手机整个断网（DNS 全挂、TCP 数据面 0 字节）
 两种常见元凶：
 1. v2rayNG/Clash 等 VPN 开着但节点死了：am force-stop <包名>，并关掉其开机自启。
