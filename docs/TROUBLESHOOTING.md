@@ -164,6 +164,30 @@ APK 里 `WebActivity` 写死加载 `http://127.0.0.1:3080/`，所以直接切到
 要么找到关掉/固定 token 的配置，要么改 APK 让它带着 token 打开（root 版可经 su 读横幅）。
 
 
+
+### 0.1.5 移植进展与坑（2026-09-16 实测，未完成）
+在 13 Pro 上完整试过一次 0.1.0-rc.6 → 0.1.5-rc.2，已解决 6 关，**但最后一关未过，已回滚**。
+已解决（补丁都在 scripts/，实测有效）：
+1. composer CPU 黑洞（`patch-dsh-client-modules.mjs`）
+2. web 鉴权 token 门禁对 loopback 放行（`patch-dsh-web-auth.mjs`）
+3. sharp wasm 回退需 `@img/sharp-wasm32` + `@emnapi/runtime`
+4. `link→rename/alias` 三处语义 + `constants` 别名（`patch-dsh-link.mjs`）
+5. node-pty 惰性加载新锚点（`patch-dsh.mjs`）
+6. **`flock` 原生模块在 Android 上直接抛 `ERR_FLOCK_UNSUPPORTED_PLATFORM`**（`process.platform === 'android'`），
+   会话日志因此永远写不出来；`patch-dsh-flock-android.mjs` 让它在 android 上退化为无竞争锁。
+**未解决**：打完 1–6 后，`session/prompt` 返回 `accepted:true`、会话目录只生成 `session.lock`、
+没有 `session.jsonl.zstd`、进程空闲在 `processTimers`、没有任何对外模型连接 —— 即轮次从未启动。
+纯自带 profile 同样复现，所以不是用户 profile/预设的问题；怀疑仍有某个服务/插件在 Android 上永不激活
+（0.1.0 时代同类故障是 `tool-bash waiting for shell`）。诊断手法：用 `--inspect` 起实例，复现后
+`Debugger.pause` 抓栈（只会看到 `processTimers`，说明在等一个永不 settle 的 promise）。
+
+**混用 home 的两个真实事故（回滚时必须处理）**：
+- 0.1.5 会把 `~/.dsh/.credentials.yaml` 改写成新格式（`version: 1` 是数字）；0.1.0-rc.6 读它会直接拒绝启动
+  （`value for "version" ... must be a string`）。用真实 home 跑一次新版就会中招。
+- mnemon 0.5.9 迁移会往共享 `settings.yaml` 写 `mnemon.displayMode: builtin`，而 mnemon 0.1.2 的 schema 只认
+  `sidebar`/`buildin`（它自己的拼写）→ 回滚后旧版起不来。
+- 预设的 persona 配置键 0.1.5 用 `prefix:`、0.1.0 用 `text:`，回滚时要改回去。
+
 ### 手机整个断网（DNS 全挂、TCP 数据面 0 字节）
 两种常见元凶：
 1. v2rayNG/Clash 等 VPN 开着但节点死了：am force-stop <包名>，并关掉其开机自启。
