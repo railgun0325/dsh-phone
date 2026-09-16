@@ -140,12 +140,16 @@ done
 say "web http=$code after $((i * 2))s"
 [ "$code" = 200 ] || die "dsh web did not come up — roll back with: $0 --rollback"
 
-say "one-shot turn smoke test"
-SMOKE=$(timeout -s KILL 120 "$NODE" --expose-internals "$TREE_DSH/lib/bin.js" \
-  --profile headless 'Reply with exactly: upgrade-ok' 2>&1 | tail -3)
-echo "$SMOKE" | tee -a "$LOG"
-case "$SMOKE" in
-  *upgrade-ok*) say "VERIFIED: 0.1.5 answers a real turn" ;;
-  *) say "WARN: smoke test did not show the reply — inspect $LOG" ;;
-esac
+say "one-shot turn smoke test (live web API)"
+VERIFY=$HOME_DIR/verify-turn.mjs
+if [ -f "$VERIFY" ]; then
+  VOUT=$(timeout -s KILL 180 "$NODE" "$VERIFY" "$PORT" "$HOME_DIR" 2>&1 | tail -4)
+  echo "$VOUT" | tee -a "$LOG"
+  case "$VOUT" in
+    *VERIFY_OK*) say "VERIFIED: 0.1.5 answers a real turn over $PORT" ;;
+    *) say "WARN: turn verification failed — inspect $LOG, roll back with $0 --rollback" ;;
+  esac
+else
+  say "note: $VERIFY not installed, skipping the turn check"
+fi
 say "done. rollback: $0 --rollback"
