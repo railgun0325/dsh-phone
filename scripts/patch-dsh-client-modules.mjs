@@ -62,7 +62,8 @@ if (src.includes(mapAnchor)) {
   process.exit(1)
 }
 
-// --- 2. coalesce the per-registration flush ---------------------------------const flushAnchor = [
+// --- 2. coalesce the per-registration flush ---------------------------------
+const flushAnchor = [
   '\t\t\tif (this.flushQueued) return;',
   '\t\t\tthis.flushQueued = true;',
   '\t\t\tqueueMicrotask(() => {',

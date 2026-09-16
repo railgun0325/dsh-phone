@@ -110,8 +110,22 @@ https://packages.termux.dev/apt/termux-main
   DSH_DIR="$(npm root -g)/@deepseek-ai/dsh"
   echo "DSH_DIR=$DSH_DIR"
 
+  # Two possible layouts (see setup-root.sh): a normal global install nests the
+  # dependency copies under $DSH_DIR/node_modules/@deepseek-ai, while a path-symlink
+  # into a hand-built tree keeps them as siblings of the launcher. Hard-coding the
+  # first aborts the deploy with ENOENT on a symlinked install.
+  DSH_REAL=$(readlink -f "$DSH_DIR")
+  if [ -d "$DSH_REAL/node_modules/@deepseek-ai" ]; then
+    SCOPE_DIR="$DSH_REAL/node_modules/@deepseek-ai"
+    MODROOT="$DSH_REAL/node_modules"
+  else
+    SCOPE_DIR="$(dirname "$DSH_REAL")"
+    MODROOT="$(dirname "$SCOPE_DIR")"
+  fi
+  echo "SCOPE_DIR=$SCOPE_DIR"
+
   echo "[step] patch koffi statx for Android"
-  KOFFI_CC="$DSH_DIR/node_modules/koffi/lib/native/base/base.cc"
+  KOFFI_CC="$MODROOT/koffi/lib/native/base/base.cc"
   if [ -f "$KOFFI_CC" ] && ! grep -q 'ANDROID' "$KOFFI_CC"; then
     sed -i 's/#if defined(__linux__)/#if defined(__linux__) && !defined(__ANDROID__)/' "$KOFFI_CC"
     echo "[ok] koffi patched"
@@ -129,37 +143,37 @@ https://packages.termux.dev/apt/termux-main
 
   echo "[step] patch node-pty lazy load"
   if [ -f "$HOME/patch-dsh.mjs" ]; then
-    node "$HOME/patch-dsh.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js"
+    node "$HOME/patch-dsh.mjs" "$SCOPE_DIR/dsh-subprocess-local/lib/index.js"
   else
     echo "[warn] patch-dsh.mjs 缺失，跳过（不影响主流程）"
   fi
 
   echo "[step] patch session/attachment publish (link -> rename, Android SELinux denies link)"
   if [ -f "$HOME/patch-dsh-link.mjs" ]; then
-    node "$HOME/patch-dsh-link.mjs" "$DSH_DIR/node_modules/@deepseek-ai"
+    node "$HOME/patch-dsh-link.mjs" "$SCOPE_DIR"
   else
     echo "[warn] patch-dsh-link.mjs 缺失，跳过（不影响主流程）"
   fi
 
   echo "[step] patch client-modules composer (0.1.5+; phone-sized CPU)"
   if [ -f "$HOME/patch-dsh-client-modules.mjs" ]; then
-    node "$HOME/patch-dsh-client-modules.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js" || \
-      echo "[warn] client-modules 不存在（0.1.5 之前）—— 跳过"
+    node "$HOME/patch-dsh-client-modules.mjs" "$SCOPE_DIR/dsh-client-modules/lib/index.js" || \
+      echo "[warn] client-modules 补丁未生效（目标缺失，或该版本锚点已变）"
   else
     echo "[warn] patch-dsh-client-modules.mjs 缺失，跳过（旧 APK？）"
   fi
 
   echo "[step] patch web auth (loopback stays token-free; 0.1.5+ only)"
   if [ -f "$HOME/patch-dsh-web-auth.mjs" ]; then
-    node "$HOME/patch-dsh-web-auth.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js" || \
-      echo "[warn] client-connection 不存在 —— 跳过"
+    node "$HOME/patch-dsh-web-auth.mjs" "$SCOPE_DIR/dsh-client-connection/lib/index.js" || \
+      echo "[warn] web-auth 补丁未生效（目标缺失，或该版本锚点已变）"
   else
     echo "[warn] patch-dsh-web-auth.mjs 缺失，跳过（旧 APK？）"
   fi
 
   echo "[step] patch flock native module (Android app uids have no flock(2))"
   if [ -f "$HOME/patch-dsh-flock-android.mjs" ]; then
-    node "$HOME/patch-dsh-flock-android.mjs" "$DSH_DIR/node_modules/@deepseek-ai/node-addon-system/lib/flock.js" || \
+    node "$HOME/patch-dsh-flock-android.mjs" "$SCOPE_DIR/node-addon-system/lib/flock.js" || \
       echo "[warn] node-addon-system/flock.js 不存在 —— 跳过"
   else
     echo "[warn] patch-dsh-flock-android.mjs 缺失，跳过（旧 APK？）"
@@ -187,7 +201,7 @@ https://packages.termux.dev/apt/termux-main
   fi
 
   echo "[step] register dsh-android-control plugin"
-  PLUGIN_DIR="$DSH_DIR/node_modules/dsh-android-control"
+  PLUGIN_DIR="$MODROOT/dsh-android-control"
   mkdir -p "$PLUGIN_DIR/lib"
   install -m 644 "$HOME/plugin/index.js" "$HOME/plugin/package.json" "$HOME/plugin/cordis.patch.yml" "$PLUGIN_DIR/"
   install -m 644 "$HOME/plugin/lib/client.js" "$PLUGIN_DIR/lib/"
