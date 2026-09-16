@@ -186,8 +186,15 @@ EOF
   # leaves the app's one-shot WebView on the white "DSH 还没起来" page.
   if [ -f "$HOME/dsh-watchdog.sh" ]; then
     if su -c "cp $HOME/dsh-watchdog.sh /data/adb/service.d/dsh-watchdog.sh && chmod 755 /data/adb/service.d/dsh-watchdog.sh" 2>/dev/null; then
-      su -c "setsid sh /data/adb/service.d/dsh-watchdog.sh watch >/dev/null 2>&1 &" 2>/dev/null
-      echo "[ok] dsh-watchdog 已安装并在运行（日志 /data/adb/dsh-watchdog.log）"
+      # Launch only when no loop is already alive. The script's own pidfile guard is
+      # not enough here: a stale pidfile from a manual start makes the guard pass and
+      # leaves two watchers probing/reviving in parallel.
+      if su -c "pgrep -f dsh-watchdog[.]sh >/dev/null 2>&1"; then
+        echo "[ok] dsh-watchdog 已在运行（跳过重复启动）"
+      else
+        su -c "setsid sh /data/adb/service.d/dsh-watchdog.sh watch >/dev/null 2>&1 &" 2>/dev/null
+        echo "[ok] dsh-watchdog 已安装并启动（日志 /data/adb/dsh-watchdog.log）"
+      fi
     else
       echo "[warn] dsh-watchdog 安装失败（/data/adb/service.d 不可用？仍是 root 吗）"
     fi

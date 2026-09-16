@@ -1,9 +1,13 @@
 package com.dsh.phone.common;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -37,11 +41,14 @@ public class WebActivity extends Activity {
     /** Fast in-WebView retries before falling back to the port probe. */
     private static final int RETRY_LIMIT = 4;
     private static final long PROBE_INTERVAL_MS = 2000;
+    private static final int REQ_FILE_CHOOSER = 4701;
 
     private WebView web;
     private int retries = 0;
     private volatile boolean destroyed = false;
     private Thread probeThread;
+    /** Live <input type=file> callback; the picker result arrives asynchronously. */
+    private ValueCallback<Uri[]> filePathCallback;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable reload = new Runnable() {
@@ -85,7 +92,40 @@ public class WebActivity extends Activity {
                 if (request != null && request.isForMainFrame()) onShellUnreachable();
             }
         });
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            /**
+             * The DSH composer's "添加附件" button clicks a hidden
+             * {@code <input type="file">}. A WebView only surfaces that as a chooser
+             * when the host answers here — with a bare WebChromeClient the click is a
+             * silent no-op, which is exactly what the phone showed.
+             */
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (filePathCallback != null) filePathCallback.onReceiveValue(null);
+                filePathCallback = callback;
+                Intent intent = null;
+                try {
+                    intent = params.createIntent();
+                } catch (Exception ignored) {
+                    intent = null;
+                }
+                if (intent == null) {
+                    intent = new Intent(Intent.ACTION_GET_CONTENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("*/*");
+                }
+                // Files reach the WebView as content:// URIs, so it only needs read
+                // access to the one the user picked; no storage permission involved.
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try {
+                    startActivityForResult(intent, REQ_FILE_CHOOSER);
+                    return true;
+                } catch (ActivityNotFoundException e) {
+                    filePathCallback = null;
+                    return false;
+                }
+            }
+        });
         web.loadUrl(DSH_URL);
         setContentView(web);
 
@@ -182,10 +222,31 @@ public class WebActivity extends Activity {
         web.loadUrl(DSH_URL);
     }
 
+    /**
+     * Deliver the system picker's result to the waiting {@code <input type="file">}.
+     * A cancelled picker must still answer (with null), otherwise the page's input
+     * stays armed forever and every later tap is swallowed.
+     */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQ_FILE_CHOOSER) {
+            if (filePathCallback != null) {
+                filePathCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
+                filePathCallback = null;
+            }
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
     @Override
     protected void onDestroy() {
         destroyed = true;
         handler.removeCallbacks(reload);
+        if (filePathCallback != null) {
+            filePathCallback.onReceiveValue(null);
+            filePathCallback = null;
+        }
         super.onDestroy();
     }
 
