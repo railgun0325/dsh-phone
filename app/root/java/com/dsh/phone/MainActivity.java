@@ -40,7 +40,9 @@ public class MainActivity extends WizardActivity {
         log("资源解压完成");
 
         log("检测 root…（如弹出超级用户授权请点允许并勾选记住）");
-        if (!ShRoot.available()) {
+        ShRoot.Result rootProbe = ShRoot.exec("id", 8000);
+        if (rootProbe.code != 0 || !rootProbe.out.contains("uid=0")) {
+            if (ShRoot.denied(rootProbe)) throw new Exception(ShRoot.deniedHint(rootProbe));
             throw new Exception("未检测到 root。本 APK 是 Root 版，需要 Magisk/Kitsune 等已 root 手机；未 root 请下载 Shizuku 版。");
         }
         log("root 可用");
@@ -83,6 +85,7 @@ public class MainActivity extends WizardActivity {
         if (setupOut.length() > 40000) setupOut = setupOut.substring(setupOut.length() - 40000);
         log(setupOut);
         if (setup.code != 0) {
+            if (ShRoot.denied(setup)) throw new Exception(ShRoot.deniedHint(setup));
             throw new Exception("DSH 安装失败（exit " + setup.code + "）。详见 Termux 内 ~/setup-dsh.log");
         }
         log("Termux:API 硬件权限处理完成（grant/豁免明细见上方 setup 日志）");

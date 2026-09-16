@@ -57,6 +57,32 @@ public final class ShRoot {
             : run(new String[]{"su", uid, "-c", cmd}, timeoutMs);
     }
 
+    /**
+     * True when a failed su was REFUSED by the superuser manager rather than absent.
+     * Magisk/Kitsune answer "Permission denied" for a uid whose stored policy is deny
+     * (this app's uid had exactly that after an update), and that is the difference
+     * between "install Magisk" and "flip one switch in the Magisk app" — worth
+     * reporting separately instead of the generic "未检测到 root".
+     */
+    public static boolean denied(Result r) {
+        if (r == null || r.code == 0) return false;
+        String out = r.out == null ? "" : r.out.toLowerCase();
+        return out.contains("permission denied")
+            || out.contains("not allowed")
+            || out.contains("superuser")
+            || out.contains("拒绝")
+            || out.contains("授权");
+    }
+
+    /** Operator-facing fix for {@link #denied}: exactly where to flip the switch. */
+    public static String deniedHint(Result r) {
+        String detail = r == null || r.out == null ? "" : r.out.trim();
+        if (detail.length() > 200) detail = detail.substring(0, 200);
+        return "超级用户权限被拒绝（" + detail + "）。请打开 Magisk → 底栏「超级用户」→ 找到 DSH Phone"
+            + " → 打开右侧开关（设为「允许」并勾选记住），再回到本页重新点一键部署。"
+            + "也可在 Magisk 设置里确认没有开启 SuList/白名单模式。";
+    }
+
     private static Result run(String[] argv, int timeoutMs) {
         try {
             Process p = new ProcessBuilder(argv).redirectErrorStream(true).start();

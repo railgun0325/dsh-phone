@@ -3,7 +3,7 @@
 # No Gradle, no AndroidX: aapt2 compile/link + javac + d8 + zipalign + apksigner.
 #
 # Usage: ANDROID_SDK_ROOT=/path/to/sdk bash tools/build-apk.sh <root|shizuku>
-# Env:   VERSION_CODE (default 12), VERSION_NAME (default 0.2.8)
+# Env:   VERSION_CODE (default 13), VERSION_NAME (default 0.2.9)
 #        ANDROID_KEYSTORE_BASE64 — optional; decoded into apk/debug.keystore by CI
 set -euo pipefail
 
@@ -21,8 +21,8 @@ for t in aapt2 d8 zipalign apksigner; do
 done
 command -v javac >/dev/null || { echo "javac not on PATH (need JDK 17)" >&2; exit 2; }
 
-VERSION_CODE=${VERSION_CODE:-12}
-VERSION_NAME=${VERSION_NAME:-0.2.8}
+VERSION_CODE=${VERSION_CODE:-13}
+VERSION_NAME=${VERSION_NAME:-0.2.9}
 
 ASSETS=$REPO/assets
 OUT=$REPO/app/$FLAVOR/out
