@@ -125,6 +125,33 @@ EOF
   node "$HOME/patch-dsh-web-auth.mjs" "$SCOPE_DIR/dsh-client-connection/lib/index.js" || \
     echo "[warn] web-auth 补丁未生效（目标缺失，或该版本锚点已变）"
 
+  echo "[step] patch attachment store durability walk (Android: /data/data and / are not fsync-able)"
+  # dsh-attachment-local fsyncs every ancestor directory of the store up to the
+  # filesystem root: open('/data/data') is EACCES for every app uid and fsync('/')
+  # is EINVAL on this kernel, so saving ANY image or file aborts and the prompt is
+  # rejected with a reason that never mentions attachments.
+  if [ -f "$HOME/patch-dsh-attachment-fsync.mjs" ]; then
+    node "$HOME/patch-dsh-attachment-fsync.mjs" "$SCOPE_DIR/dsh-attachment-local/lib/index.js" || \
+      echo "[warn] attachment-local 补丁未生效（目标缺失，或该版本锚点已变）"
+  else
+    echo "[warn] payload 里没有 patch-dsh-attachment-fsync.mjs（旧 APK？）"
+  fi
+
+  echo "[step] check llm-deepseek model catalog declares image input"
+  # A user-level `llm-deepseek.models` list REPLACES the shipped catalog, and the
+  # schema defaults inputModalities to ["text"] — so a model that really does accept
+  # images (e.g. deepseek-flash) is refused with "Model ... does not support image
+  # input." Adding `inputModalities: [text, image]` to that entry fixes it.
+  if [ -f "$HOME/.dsh/settings.yaml" ] && grep -q 'llm-deepseek' "$HOME/.dsh/settings.yaml"; then
+    if grep -q 'inputModalities' "$HOME/.dsh/settings.yaml"; then
+      echo "[ok] settings.yaml 已声明 inputModalities"
+    else
+      echo "[warn] ~/.dsh/settings.yaml 里 llm-deepseek.models 没写 inputModalities："
+      echo "       这些模型会被当成纯文本，添加图片会被拒绝。若要支持图片，在该模型条目下加一行"
+      echo "         inputModalities: [text, image]"
+    fi
+  fi
+
   echo "[step] patch flock native module (Android app uids have no flock(2))"
   # 0.1.5 takes a cross-process lock through @deepseek-ai/node-addon-system on every
   # durable session write. On Android the addon throws ERR_FLOCK_UNSUPPORTED_PLATFORM,

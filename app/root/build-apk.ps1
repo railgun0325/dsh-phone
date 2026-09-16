@@ -41,7 +41,7 @@ Copy-Item (Join-Path $assetsDir 'termux-boot.apk') (Join-Path $outAssets 'termux
 Copy-Item (Join-Path $assetsDir 'termux-api.apk')  (Join-Path $outAssets 'termux-api.apk') -Force
 
 $scriptsDir = Join-Path $root 'scripts'
-foreach ($s in @('setup-root.sh','start-dsh.sh','boot-dsh.sh','dsh-watchdog.sh','dns-fwd.mjs','patch-dsh.mjs','patch-dsh-link.mjs','patch-dsh-client-modules.mjs','patch-dsh-web-auth.mjs','patch-dsh-flock-android.mjs','patch-dsh-presets.mjs','upgrade-to-015.sh','verify-turn.mjs','install-api-key.sh','cordis.patch.yml')) {
+foreach ($s in @('setup-root.sh','start-dsh.sh','boot-dsh.sh','dsh-watchdog.sh','dns-fwd.mjs','patch-dsh.mjs','patch-dsh-link.mjs','patch-dsh-client-modules.mjs','patch-dsh-web-auth.mjs','patch-dsh-flock-android.mjs','patch-dsh-presets.mjs','patch-dsh-attachment-fsync.mjs','upgrade-to-015.sh','verify-turn.mjs','install-api-key.sh','cordis.patch.yml')) {
   Copy-Item (Join-Path $scriptsDir $s) (Join-Path $outPayload $s) -Force
 }
 $pluginSrc = Join-Path $root 'plugin'
@@ -75,7 +75,7 @@ if ($LASTEXITCODE -ne 0) { throw 'd8 failed' }
 
 # 6. aapt2 link (manifest + compiled res + assets)
 Write-Output '--- aapt2 link ---'
-& $aapt2 link -o (Join-Path $out 'base.apk') -I $plat --manifest (Join-Path $PSScriptRoot 'AndroidManifest.xml') --min-sdk-version 24 --target-sdk-version 34 --version-code 13 --version-name 0.2.9 $resZip
+& $aapt2 link -o (Join-Path $out 'base.apk') -I $plat --manifest (Join-Path $PSScriptRoot 'AndroidManifest.xml') --min-sdk-version 24 --target-sdk-version 34 --version-code 14 --version-name 0.2.10 $resZip
 if ($LASTEXITCODE -ne 0) { throw 'aapt2 link failed' }
 
 # 7. add classes.dex + assets into the APK (assets use forward-slash entry names)
