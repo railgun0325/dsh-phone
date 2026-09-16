@@ -165,8 +165,8 @@ APK 里 `WebActivity` 写死加载 `http://127.0.0.1:3080/`，所以直接切到
 
 
 
-### 0.1.5 移植进展与坑（2026-09-16 实测，未完成）
-在 13 Pro 上完整试过一次 0.1.0-rc.6 → 0.1.5-rc.2，已解决 6 关，**但最后一关未过，已回滚**。
+### 0.1.5 移植进展与坑（2026-09-16 实测，7 关全过，可升级）
+在 13 Pro 上完整试过一次 0.1.0-rc.6 → 0.1.5-rc.2。升级流程见 `docs/UPGRADE-0.1.5.md`。
 已解决（补丁都在 scripts/，实测有效）：
 1. composer CPU 黑洞（`patch-dsh-client-modules.mjs`）
 2. web 鉴权 token 门禁对 loopback 放行（`patch-dsh-web-auth.mjs`）
@@ -175,18 +175,35 @@ APK 里 `WebActivity` 写死加载 `http://127.0.0.1:3080/`，所以直接切到
 5. node-pty 惰性加载新锚点（`patch-dsh.mjs`）
 6. **`flock` 原生模块在 Android 上直接抛 `ERR_FLOCK_UNSUPPORTED_PLATFORM`**（`process.platform === 'android'`），
    会话日志因此永远写不出来；`patch-dsh-flock-android.mjs` 让它在 android 上退化为无竞争锁。
-**未解决**：打完 1–6 后，`session/prompt` 返回 `accepted:true`、会话目录只生成 `session.lock`、
-没有 `session.jsonl.zstd`、进程空闲在 `processTimers`、没有任何对外模型连接 —— 即轮次从未启动。
-纯自带 profile 同样复现，所以不是用户 profile/预设的问题；怀疑仍有某个服务/插件在 Android 上永不激活
-（0.1.0 时代同类故障是 `tool-bash waiting for shell`）。诊断手法：用 `--inspect` 起实例，复现后
-`Debugger.pause` 抓栈（只会看到 `processTimers`，说明在等一个永不 settle 的 promise）。
+7. **第 7 关是 4 号补丁自己挖的坑**：改写原子发布时用了 `rename()` 却没把它加进
+   `node:fs/promises` 的 import 列表（这一版原始 import 里没有 `rename`，而 0.1.0 的
+   import 行本来就有）。于是每次发布都抛 `ReferenceError: rename is not defined`——
+   而且是在一个没人 await 的 promise 里，所以**看起来不是报错而是"轮次永不启动"**：
+   `session/prompt` 返回 `accepted:true`、目录里只有 `session.lock`、没有
+   `session.v3.jsonl.zstd`、进程空闲在 `processTimers`、没有任何对外模型连接。
+   记录一下当时的误判：我先怀疑"某个服务/插件在 Android 上永不激活"，用 `--inspect` 抓栈
+   只看到 `processTimers`，又用"纯自带 profile 复现"排除了用户预设 —— 全对，但都没指向真凶。
+   真正一步到位的手法是把 boot 直接跑出来看它打印什么：`node <tree>/lib/bin.js --profile headless 'say hi'`
+   一秒就吐 `dsh: rename is not defined`（web 模式只是把这个异常吞进了静默的 promise）。
+   **教训：先用最薄的 surface 复现，别一上来就上完整 web + HTTP 探针。**
+   修法：import 补 `rename`（`patch-dsh-link.mjs` 里同时留了"修复已打过补丁的树"的规则）。
 
-**混用 home 的两个真实事故（回滚时必须处理）**：
+**同一次排查中确认的其他 0.1.5 前置条件**：
+- 用户预设的 persona 行 0.1.5 要 `prefix:`（0.1.0 是 `text:`），否则该预设 mount 失败、
+  用它的会话直接起不来（报 `$.prefix missing required value`）。用 `scripts/patch-dsh-presets.mjs` 转换。
+- `dsh-mnemon` 必须 ≥0.5.x：0.1.2 与 0.1.5 同跑会在轮次收尾抛
+  `Cannot read properties of undefined (reading 'filter')`（`agent/turn-stopping` 钩子里），
+  表现是模型已经答完、`step/end` 已写、`turn/end` 却是 error。升到 0.5.10 后干净完成。
+- 旧 v0 会话**可以**在 0.1.5 里列出与续聊：列表能出标题，续聊会另写一份
+  `session.v3.jsonl.zstd`，v0 原件不动。
+
+**混用 home 的两个真实事故（升级/回滚时必须处理）**：
 - 0.1.5 会把 `~/.dsh/.credentials.yaml` 改写成新格式（`version: 1` 是数字）；0.1.0-rc.6 读它会直接拒绝启动
   （`value for "version" ... must be a string`）。用真实 home 跑一次新版就会中招。
-- mnemon 0.5.9 迁移会往共享 `settings.yaml` 写 `mnemon.displayMode: builtin`，而 mnemon 0.1.2 的 schema 只认
-  `sidebar`/`buildin`（它自己的拼写）→ 回滚后旧版起不来。
-- 预设的 persona 配置键 0.1.5 用 `prefix:`、0.1.0 用 `text:`，回滚时要改回去。
+- 预设的 persona 配置键 0.1.5 用 `prefix:`、0.1.0 用 `text:`，两边来回切都要改。
+- `settings.yaml` 里的 `mnemon.displayMode`：mnemon 0.1.2 只认 `sidebar`/`buildin`，
+  0.5.10 三个拼写（`sidebar`/`builtin`/`buildin`）都认，所以升上去不用动，回滚要改回 `buildin`。
+- 别在真实 home 上试新版：用 `cp -a ~/.dsh ~/h015-real` 克隆一份来演练（`tools/phone-probes/` 里有现成脚本）。
 
 ### 手机整个断网（DNS 全挂、TCP 数据面 0 字节）
 两种常见元凶：

@@ -22,13 +22,26 @@ const targets = [
     file: join(base, 'dsh-session-persistence-jsonl/lib/index.js'),
     edits: [
       // 0.1.5: keep `link` (defaultFileSystem uses it as a shorthand property) and
-      // add `copyFile` for the exclusive-publish rewrite below. `constants` may or
+      // add `copyFile`/`rename` for the publish rewrites below. `constants` may or
       // may not already be imported by this build — decide that per file below.
       // `constants` is already taken by node:zlib in this file, so alias the
       // fs/promises one instead of colliding with it.
+      //
+      // `rename` MUST be in this list. The first revision of this patcher added the
+      // rewrites but not the binding, so every atomic publish threw
+      // `ReferenceError: rename is not defined` inside a promise nobody awaited.
+      // The symptom was not a visible error but a turn that never started:
+      // session.lock existed, session.jsonl.zstd never appeared, the process sat
+      // idle in processTimers, and no model connection was ever opened.
       [
         'import { link, lstat, mkdir, mkdtemp',
-        'import { constants as fsConstants, copyFile, link, lstat, mkdir, mkdtemp',
+        'import { constants as fsConstants, copyFile, link, lstat, mkdir, mkdtemp, rename',
+      ],
+      // Repair the revision-1 shape already on disk (import list patched, `rename`
+      // still missing). Keep the left side in sync with what this build ships.
+      [
+        'import { constants as fsConstants, copyFile, link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate }',
+        'import { constants as fsConstants, copyFile, link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, truncate }',
       ],
       // 0.1.5 `publishCurrentExclusive`: a hardlink here is denied on Android, and a
       // rename would consume the staged file the caller still owns — copy with
