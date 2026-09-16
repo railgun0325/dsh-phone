@@ -272,6 +272,16 @@ EOF
 alias dsh='node --expose-internals $(npm root -g)/@deepseek-ai/dsh/lib/bin.js'
 EOF
 
+  echo "[step] verify every Android gate patch is present in the installed tree"
+  # Gate list + what each marker means: docs/ANDROID-GATES.md. This is the check that
+  # turns "the deploy said OK" into "the tree the device runs is actually patched".
+  if [ -f "$HOME/verify-patched-tree.mjs" ]; then
+    node "$HOME/verify-patched-tree.mjs" "$HOME/.dsh" "$DSH_DIR" || \
+      echo "[warn] 有关卡没关上 —— 见上面的 FAIL 行与 docs/ANDROID-GATES.md"
+  else
+    echo "[warn] payload 里没有 verify-patched-tree.mjs（旧 APK？）"
+  fi
+
   echo "[step] verify one real turn over the live web API"
   # Advisory only: the wizard may not have started dsh web yet. A green VERIFY_OK is
   # the only proof that the whole chain (patches + presets + mnemon) actually works;

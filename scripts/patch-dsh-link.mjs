@@ -85,9 +85,12 @@ const aliasHelper = [
   '}',
 ].join('\n')
 
+let found = 0
+let touched = 0
 for (const t of targets) {
   let src
   try { src = readFileSync(t.file, 'utf8') } catch { console.error('skip (missing): ' + t.file); continue }
+  found++
   let changed = 0
   for (const [from, to] of t.edits) {
     if (!src.includes(from)) continue
@@ -96,6 +99,7 @@ for (const t of targets) {
   }
   if (changed === 0) {
     console.log('already patched (no anchors left): ' + t.file)
+    touched++
     continue
   }
   // Inject the alias helper once, right after the fs/promises import line.
@@ -103,5 +107,15 @@ for (const t of targets) {
     src = src.replace(/(import \{[^}]*\} from "node:fs\/promises";)/, '$1\n' + aliasHelper)
   }
   writeFileSync(t.file, src)
+  touched++
   console.log(`patched (${changed} edit group(s)): ` + t.file)
 }
+
+// A deploy against the wrong directory layout used to print "skip (missing)" for
+// every target and still exit 0, so the caller reported success with every gate
+// still open. Assert that at least one real target was found and handled.
+if (found === 0) {
+  console.error('no patch target found under ' + base + ' — wrong layout or wrong install root')
+  process.exit(1)
+}
+console.log(`targets found: ${found}, handled: ${touched}`)

@@ -152,4 +152,16 @@ if [ -f "$VERIFY" ]; then
 else
   say "note: $VERIFY not installed, skipping the turn check"
 fi
+say "gate check"
+GATES=$HOME_DIR/verify-patched-tree.mjs
+if [ -f "$GATES" ]; then
+  GOUT=$(timeout -s KILL 120 "$NODE" "$GATES" "$DSH_HOME_DIR" "$LIVE" 2>&1 | tail -14)
+  echo "$GOUT" | tee -a "$LOG"
+  case "$GOUT" in
+    *TREE_OK*) say "VERIFIED: every Android gate patch is present" ;;
+    *) say "WARN: some gates are not closed — see docs/ANDROID-GATES.md" ;;
+  esac
+else
+  say "note: $GATES not installed, skipping the gate check"
+fi
 say "done. rollback: $0 --rollback"

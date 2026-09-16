@@ -208,6 +208,14 @@ https://packages.termux.dev/apt/termux-main
     esac
   fi
 
+  echo "[step] verify every Android gate patch is present in the installed tree"
+  if [ -f "$HOME/verify-patched-tree.mjs" ]; then
+    node "$HOME/verify-patched-tree.mjs" "$HOME/.dsh" "$DSH_DIR" || \
+      echo "[warn] 有关卡没关上 —— 见 docs/ANDROID-GATES.md"
+  else
+    echo "[warn] verify-patched-tree.mjs 缺失（旧 APK？）"
+  fi
+
   echo "[step] register dsh-android-control plugin"
   PLUGIN_DIR="$MODROOT/dsh-android-control"
   mkdir -p "$PLUGIN_DIR/lib"

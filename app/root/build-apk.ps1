@@ -41,7 +41,7 @@ Copy-Item (Join-Path $assetsDir 'termux-boot.apk') (Join-Path $outAssets 'termux
 Copy-Item (Join-Path $assetsDir 'termux-api.apk')  (Join-Path $outAssets 'termux-api.apk') -Force
 
 $scriptsDir = Join-Path $root 'scripts'
-foreach ($s in @('setup-root.sh','start-dsh.sh','boot-dsh.sh','dsh-watchdog.sh','dns-fwd.mjs','patch-dsh.mjs','patch-dsh-link.mjs','patch-dsh-client-modules.mjs','patch-dsh-web-auth.mjs','patch-dsh-flock-android.mjs','patch-dsh-presets.mjs','patch-dsh-attachment-fsync.mjs','upgrade-to-015.sh','verify-turn.mjs','install-api-key.sh','cordis.patch.yml')) {
+foreach ($s in @('setup-root.sh','start-dsh.sh','boot-dsh.sh','dsh-watchdog.sh','dns-fwd.mjs','patch-dsh.mjs','patch-dsh-link.mjs','patch-dsh-client-modules.mjs','patch-dsh-web-auth.mjs','patch-dsh-flock-android.mjs','patch-dsh-presets.mjs','patch-dsh-attachment-fsync.mjs','upgrade-to-015.sh','verify-turn.mjs','verify-patched-tree.mjs','install-api-key.sh','cordis.patch.yml')) {
   Copy-Item (Join-Path $scriptsDir $s) (Join-Path $outPayload $s) -Force
 }
 $pluginSrc = Join-Path $root 'plugin'
