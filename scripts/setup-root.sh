@@ -104,6 +104,49 @@ EOF
   node "$HOME/patch-dsh-web-auth.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js" || \
     echo "[warn] client-connection not present? — skipped"
 
+  echo "[step] patch flock native module (Android app uids have no flock(2))"
+  # 0.1.5 takes a cross-process lock through @deepseek-ai/node-addon-system on every
+  # durable session write. On Android the addon throws ERR_FLOCK_UNSUPPORTED_PLATFORM,
+  # so the session log is never written and the turn dies silently right after
+  # session/prompt answers accepted:true (looks like "nothing happens", not an error).
+  if [ -f "$HOME/patch-dsh-flock-android.mjs" ]; then
+    node "$HOME/patch-dsh-flock-android.mjs" "$DSH_DIR/node_modules/@deepseek-ai/node-addon-system/lib/flock.js" || \
+      echo "[warn] node-addon-system/flock.js not present — skipped"
+  else
+    echo "[warn] payload 里没有 patch-dsh-flock-android.mjs（旧 APK？）"
+  fi
+
+  echo "[step] convert user Agent presets to the 0.1.5 persona key"
+  # 0.1.5's @deepseek-ai/dsh-persona made the prompt key required and renamed it
+  # text -> prefix. A preset still saying `text` fails to mount, and every session
+  # created from it refuses to start (`$.prefix missing required value`).
+  if [ -f "$HOME/patch-dsh-presets.mjs" ] && [ -d "$HOME/.dsh/.agent-presets" ]; then
+    node "$HOME/patch-dsh-presets.mjs" "$HOME/.dsh/.agent-presets" || echo "[warn] preset conversion failed"
+  elif [ -f "$HOME/patch-dsh-presets.mjs" ]; then
+    echo "[skip] 还没有用户预设目录"
+  else
+    echo "[warn] payload 里没有 patch-dsh-presets.mjs（旧 APK？）"
+  fi
+
+  echo "[step] dsh-mnemon version floor (0.1.5 needs >= 0.5)"
+  # dsh-mnemon < 0.5 against 0.1.5 throws
+  # "Cannot read properties of undefined (reading 'filter')" from the turn-stopping
+  # hook: the model has already answered, so it shows up as an error on a good reply.
+  MNEMON_PKG="$HOME/.dsh/profiles/web/node_modules/dsh-mnemon/package.json"
+  if [ -f "$MNEMON_PKG" ]; then
+    MNEMON_V=$(node -e "process.stdout.write(require('$MNEMON_PKG').version)" 2>/dev/null || echo "")
+    case "$MNEMON_V" in
+      0.[0-4].*|"")
+        echo "[fix] dsh-mnemon $MNEMON_V -> 0.5.10"
+        ( cd "$HOME/.dsh/profiles/web" && pnpm add dsh-mnemon@0.5.10 --reporter=append-only ) || \
+          echo "[warn] pnpm add dsh-mnemon 失败（网络？）—— 0.1.5 下每轮收尾会报错"
+        ;;
+      *) echo "[skip] dsh-mnemon $MNEMON_V 已满足" ;;
+    esac
+  else
+    echo "[skip] web profile 里没装 dsh-mnemon"
+  fi
+
   echo "[step] register dsh-android-control plugin"
   PLUGIN_DIR="$DSH_DIR/node_modules/dsh-android-control"
   mkdir -p "$PLUGIN_DIR/lib"
@@ -173,6 +216,17 @@ EOF
   cat > "$HOME/.bashrc" << 'EOF'
 alias dsh='node --expose-internals $(npm root -g)/@deepseek-ai/dsh/lib/bin.js'
 EOF
+
+  echo "[step] verify one real turn over the live web API"
+  # Advisory only: the wizard may not have started dsh web yet. A green VERIFY_OK is
+  # the only proof that the whole chain (patches + presets + mnemon) actually works;
+  # run it by hand any time with: node ~/verify-turn.mjs 3080 ~
+  if [ -f "$HOME/verify-turn.mjs" ] && curl -sf -o /dev/null --max-time 3 http://127.0.0.1:3080/ 2>/dev/null; then
+    timeout -s KILL 180 node "$HOME/verify-turn.mjs" 3080 "$HOME" || \
+      echo "[warn] 轮次验收失败 —— 见 docs/UPGRADE-0.1.5.md 第四节"
+  else
+    echo "[skip] dsh web 未运行；部署完可在 App 里执行 node ~/verify-turn.mjs 3080 ~ 自检"
+  fi
 
   touch "$HOME/.dsh-setup-ok"
   echo "SETUP OK"
