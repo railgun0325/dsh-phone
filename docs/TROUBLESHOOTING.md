@@ -188,6 +188,17 @@ APK 里 `WebActivity` 写死加载 `http://127.0.0.1:3080/`，所以直接切到
    **教训：先用最薄的 surface 复现，别一上来就上完整 web + HTTP 探针。**
    修法：import 补 `rename`（`patch-dsh-link.mjs` 里同时留了"修复已打过补丁的树"的规则）。
 
+8. **附件（图片/文件）在 Android 上永远存不下去**：`dsh-attachment-local` 的持久化会把从目标目录到
+   **文件系统根**的每一级祖先目录都 `open()` + `fsync()`。Android 上这两步必然失败：
+   `open('/data/data')` → EACCES（应用沙箱，root 除外）、`fsync('/')` → EINVAL（这台机器的内核不接受）。
+   任一级失败即中断保存，而错误被会话控制器包成 `session/agent-busy: prompt rejected`——
+   完全看不出是附件问题。补丁 `patch-dsh-attachment-fsync.mjs` 对这两类错误放行
+   （祖先目录项的 fsync 只是额外保险；文件本身的 fsync 保持不动）。
+9. **模型被登记成纯文本**：`settings.yaml` 里一旦写了 `llm-deepseek.models`，它就**整套替换**出厂目录，
+   而条目的 `inputModalities` 在 schema 里默认 `["text"]`。于是实测支持图片的 `deepseek-flash`
+   会被拒绝（`Model "deepseek-flash" does not support image input.`）。加一行
+   `inputModalities: [text, image]` 即可；`deepseek-v4-pro` 确实不支持，别加。
+
 **同一次排查中确认的其他 0.1.5 前置条件**：
 - 用户预设的 persona 行 0.1.5 要 `prefix:`（0.1.0 是 `text:`），否则该预设 mount 失败、
   用它的会话直接起不来（报 `$.prefix missing required value`）。用 `scripts/patch-dsh-presets.mjs` 转换。

@@ -3,7 +3,7 @@
 # No Gradle, no AndroidX: aapt2 compile/link + javac + d8 + zipalign + apksigner.
 #
 # Usage: ANDROID_SDK_ROOT=/path/to/sdk bash tools/build-apk.sh <root|shizuku>
-# Env:   VERSION_CODE (default 13), VERSION_NAME (default 0.2.9)
+# Env:   VERSION_CODE (default 14), VERSION_NAME (default 0.2.10)
 #        ANDROID_KEYSTORE_BASE64 — optional; decoded into apk/debug.keystore by CI
 set -euo pipefail
 
@@ -21,8 +21,8 @@ for t in aapt2 d8 zipalign apksigner; do
 done
 command -v javac >/dev/null || { echo "javac not on PATH (need JDK 17)" >&2; exit 2; }
 
-VERSION_CODE=${VERSION_CODE:-13}
-VERSION_NAME=${VERSION_NAME:-0.2.9}
+VERSION_CODE=${VERSION_CODE:-14}
+VERSION_NAME=${VERSION_NAME:-0.2.10}
 
 ASSETS=$REPO/assets
 OUT=$REPO/app/$FLAVOR/out
@@ -43,7 +43,7 @@ if [ "$FLAVOR" = root ]; then
   # docs/TROUBLESHOOTING.md, gate 7).
   PAYLOAD="setup-root.sh start-dsh.sh boot-dsh.sh dsh-watchdog.sh dns-fwd.mjs \
 patch-dsh.mjs patch-dsh-link.mjs patch-dsh-client-modules.mjs patch-dsh-web-auth.mjs \
-patch-dsh-flock-android.mjs patch-dsh-presets.mjs upgrade-to-015.sh verify-turn.mjs \
+patch-dsh-flock-android.mjs patch-dsh-presets.mjs patch-dsh-attachment-fsync.mjs upgrade-to-015.sh verify-turn.mjs \
 install-api-key.sh cordis.patch.yml"
 else
   [ -s "$ASSETS/shizuku.apk" ] || { echo "missing asset shizuku.apk" >&2; exit 2; }
@@ -53,7 +53,7 @@ else
   cp "$ASSETS/shizuku.apk" "$OUT/assets/"
   PAYLOAD="setup-shizuku.sh start-dsh.sh boot-dsh-shizuku.sh \
 patch-dsh.mjs patch-dsh-link.mjs patch-dsh-client-modules.mjs patch-dsh-web-auth.mjs \
-patch-dsh-flock-android.mjs patch-dsh-presets.mjs verify-turn.mjs cordis.patch.yml"
+patch-dsh-flock-android.mjs patch-dsh-presets.mjs patch-dsh-attachment-fsync.mjs verify-turn.mjs cordis.patch.yml"
 fi
 
 for f in $PAYLOAD; do

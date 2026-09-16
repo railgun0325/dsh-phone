@@ -179,6 +179,14 @@ https://packages.termux.dev/apt/termux-main
     echo "[warn] patch-dsh-flock-android.mjs 缺失，跳过（旧 APK？）"
   fi
 
+  echo "[step] patch attachment store durability walk (Android)"
+  if [ -f "$HOME/patch-dsh-attachment-fsync.mjs" ]; then
+    node "$HOME/patch-dsh-attachment-fsync.mjs" "$SCOPE_DIR/dsh-attachment-local/lib/index.js" || \
+      echo "[warn] attachment-local 补丁未生效（目标缺失，或该版本锚点已变）"
+  else
+    echo "[warn] patch-dsh-attachment-fsync.mjs 缺失，跳过（旧 APK？）"
+  fi
+
   echo "[step] convert user Agent presets to the 0.1.5 persona key"
   if [ -f "$HOME/patch-dsh-presets.mjs" ] && [ -d "$HOME/.dsh/.agent-presets" ]; then
     node "$HOME/patch-dsh-presets.mjs" "$HOME/.dsh/.agent-presets" || echo "[warn] 预设转换失败"
