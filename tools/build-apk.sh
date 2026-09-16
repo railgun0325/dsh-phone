@@ -43,7 +43,7 @@ if [ "$FLAVOR" = root ]; then
   # docs/TROUBLESHOOTING.md, gate 7).
   PAYLOAD="setup-root.sh start-dsh.sh boot-dsh.sh dsh-watchdog.sh dns-fwd.mjs \
 patch-dsh.mjs patch-dsh-link.mjs patch-dsh-client-modules.mjs patch-dsh-web-auth.mjs \
-patch-dsh-flock-android.mjs patch-dsh-presets.mjs patch-dsh-attachment-fsync.mjs upgrade-to-015.sh verify-turn.mjs \
+patch-dsh-flock-android.mjs patch-dsh-presets.mjs patch-dsh-attachment-fsync.mjs upgrade-to-015.sh verify-turn.mjs verify-patched-tree.mjs \
 install-api-key.sh cordis.patch.yml"
 else
   [ -s "$ASSETS/shizuku.apk" ] || { echo "missing asset shizuku.apk" >&2; exit 2; }
@@ -53,7 +53,7 @@ else
   cp "$ASSETS/shizuku.apk" "$OUT/assets/"
   PAYLOAD="setup-shizuku.sh start-dsh.sh boot-dsh-shizuku.sh \
 patch-dsh.mjs patch-dsh-link.mjs patch-dsh-client-modules.mjs patch-dsh-web-auth.mjs \
-patch-dsh-flock-android.mjs patch-dsh-presets.mjs patch-dsh-attachment-fsync.mjs verify-turn.mjs cordis.patch.yml"
+patch-dsh-flock-android.mjs patch-dsh-presets.mjs patch-dsh-attachment-fsync.mjs verify-turn.mjs verify-patched-tree.mjs cordis.patch.yml"
 fi
 
 for f in $PAYLOAD; do

@@ -48,6 +48,9 @@ jobs:
             echo "::warning::no ANDROID_KEYSTORE_BASE64 secret — a fresh keystore will be generated, so this APK cannot update an existing install"
           fi
 
+      - name: Preflight (script syntax, patch targets, version/payload consistency)
+        run: bash tools/preflight.sh
+
       - name: Fetch third-party assets
         run: bash tools/fetch-assets.sh
 
