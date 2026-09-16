@@ -51,7 +51,7 @@ bash ~/upgrade-to-015.sh --rollback
 2. 旧的 0.1.0 安装改名为 `dsh.0.1.0-rc.6.bak` 留在原地，回滚就是一次 `mv`。
 3. 用户数据整体备份到 `~/backups/upgrade-015-<时间戳>/user-data.tgz`。
 4. 验证走**线上 web API**：`node ~/verify-turn.mjs 3080 ~` —— 建一个临时会话、发一句话、
-   轮询到该会话 `sessionStats.turns >= 1` 才算过（`tools/phone-probes/verify-turn.mjs`）。
+   轮询到该会话 `sessionStats.turns >= 1` 才算过（`scripts/verify-turn.mjs`）。
    **别用 `--profile headless` 当验收**：这个 home 的 `cordis.patch.yml` 会把
    `dsh-android-control` 插进**每一个** profile，而该包只装在 web profile 里，
    所以 headless 一定死在 `ERR_MODULE_NOT_FOUND`，和 0.1.5 本身无关。

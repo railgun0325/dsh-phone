@@ -141,6 +141,51 @@ https://packages.termux.dev/apt/termux-main
     echo "[warn] patch-dsh-link.mjs 缺失，跳过（不影响主流程）"
   fi
 
+  echo "[step] patch client-modules composer (0.1.5+; phone-sized CPU)"
+  if [ -f "$HOME/patch-dsh-client-modules.mjs" ]; then
+    node "$HOME/patch-dsh-client-modules.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js" || \
+      echo "[warn] client-modules 不存在（0.1.5 之前）—— 跳过"
+  else
+    echo "[warn] patch-dsh-client-modules.mjs 缺失，跳过（旧 APK？）"
+  fi
+
+  echo "[step] patch web auth (loopback stays token-free; 0.1.5+ only)"
+  if [ -f "$HOME/patch-dsh-web-auth.mjs" ]; then
+    node "$HOME/patch-dsh-web-auth.mjs" "$DSH_DIR/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js" || \
+      echo "[warn] client-connection 不存在 —— 跳过"
+  else
+    echo "[warn] patch-dsh-web-auth.mjs 缺失，跳过（旧 APK？）"
+  fi
+
+  echo "[step] patch flock native module (Android app uids have no flock(2))"
+  if [ -f "$HOME/patch-dsh-flock-android.mjs" ]; then
+    node "$HOME/patch-dsh-flock-android.mjs" "$DSH_DIR/node_modules/@deepseek-ai/node-addon-system/lib/flock.js" || \
+      echo "[warn] node-addon-system/flock.js 不存在 —— 跳过"
+  else
+    echo "[warn] patch-dsh-flock-android.mjs 缺失，跳过（旧 APK？）"
+  fi
+
+  echo "[step] convert user Agent presets to the 0.1.5 persona key"
+  if [ -f "$HOME/patch-dsh-presets.mjs" ] && [ -d "$HOME/.dsh/.agent-presets" ]; then
+    node "$HOME/patch-dsh-presets.mjs" "$HOME/.dsh/.agent-presets" || echo "[warn] 预设转换失败"
+  else
+    echo "[skip] 没有用户预设目录或转换脚本缺失"
+  fi
+
+  echo "[step] dsh-mnemon version floor (0.1.5 needs >= 0.5)"
+  MNEMON_PKG="$HOME/.dsh/profiles/web/node_modules/dsh-mnemon/package.json"
+  if [ -f "$MNEMON_PKG" ]; then
+    MNEMON_V=$(node -e "process.stdout.write(require('$MNEMON_PKG').version)" 2>/dev/null || echo "")
+    case "$MNEMON_V" in
+      0.[0-4].*|"")
+        echo "[fix] dsh-mnemon $MNEMON_V -> 0.5.10"
+        ( cd "$HOME/.dsh/profiles/web" && pnpm add dsh-mnemon@0.5.10 --reporter=append-only ) || \
+          echo "[warn] pnpm add dsh-mnemon 失败（网络？）"
+        ;;
+      *) echo "[skip] dsh-mnemon $MNEMON_V 已满足" ;;
+    esac
+  fi
+
   echo "[step] register dsh-android-control plugin"
   PLUGIN_DIR="$DSH_DIR/node_modules/dsh-android-control"
   mkdir -p "$PLUGIN_DIR/lib"

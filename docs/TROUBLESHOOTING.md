@@ -210,7 +210,7 @@ home 级 `~/.dsh/cordis.patch.yml` 里的 `insert: dsh-android-control` 会作�
 但这个包只装在 `profiles/web/node_modules` 里，所以 headless 一定死在
 `Cannot find package 'dsh-android-control' imported from ~/.dsh/profiles/headless/`。
 这与 DSH 版本无关（0.1.0 时同样如此），只是别拿它当升级验收。
-验收用 `tools/phone-probes/verify-turn.mjs <port> <home>`：走 web API 建会话发一句话，
+验收用 `scripts/verify-turn.mjs <port> <home>`：走 web API 建会话发一句话，
 看 `sessionStats.turns >= 1`。
 
 ### 手机整个断网（DNS 全挂、TCP 数据面 0 字节）
