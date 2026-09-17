@@ -15,8 +15,8 @@ on:
       - '.github/workflows/android.yml'
 
 env:
-  VERSION_CODE: '14'
-  VERSION_NAME: '0.2.10'
+  VERSION_CODE: '15'
+  VERSION_NAME: '0.2.11'
 
 jobs:
   build:

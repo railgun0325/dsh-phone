@@ -87,6 +87,20 @@ echo "$payload" | grep -q 'verify-patched-tree.mjs' \
   || { note FAIL "payload: verify-patched-tree.mjs is not shipped (no post-deploy gate check)"; fail=1; }
 [ "$fail" = 0 ] && note ok "payload complete ($(echo "$payload" | wc -l | tr -d ' ') files)"
 
+# --- 6. no script may use the attribute-clobbering copy shape ----------------
+# `cp -a src/. dst/` applies the SOURCE directory's ownership/mode to dst. Staging a
+# payload from /data/local/tmp (shell:shell) or a root-owned dir into the Termux home
+# that way left ~ owned by another uid with mode 775, so the Termux uid could not
+# create anything inside its own home (2026-09-17, "cannot create ...: EACCES mkdir").
+copies=$(grep -nE 'cp +-[a-zA-Z]*[ar][a-zA-Z]* +[^ ]*/\. ' scripts/*.sh tools/*.sh 2>/dev/null | grep -vE '^[^:]+:[0-9]+: *#' || true)
+if [ -n "$copies" ]; then
+  printf '%s\n' "$copies"
+  note FAIL "copy: the line(s) above use 'cp -a/-r <src>/. <dst>/' — restore dst ownership/mode afterwards"
+  fail=1
+else
+  note ok "no attribute-clobbering payload copies in shell scripts"
+fi
+
 # --- 6. docs the gates reference must exist --------------------------------
 [ -f docs/ANDROID-GATES.md ] || { note FAIL "docs/ANDROID-GATES.md is missing"; fail=1; }
 [ "$fail" = 0 ] && note ok "gate documentation present"

@@ -15,7 +15,7 @@
 //
 // usage: node verify-patched-tree.mjs [DSH_HOME]      (default ~/.dsh)
 //        exit 0 = every gate closed, 1 = at least one FAIL
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 const home = process.argv[2] ?? join(process.env.HOME ?? '/data/data/com.termux/files/home', '.dsh')
@@ -56,6 +56,34 @@ function gate(id, description, file, marker, kind = 'string') {
 }
 
 console.log(`tree: ${scope}\n`)
+
+// --- g0: the Termux home must actually be writable by the uid running DSH -----
+// 2026-09-17: `~` had been left owned by shell:shell (uid 2000) with mode 775 — the
+// Termux uid is then "other" and every create inside it fails with EACCES, which the
+// UI shows as "cannot create .../11: EACCES ... mkdir". Nothing to do with root or
+// SELinux: it is ordinary Unix permissions on the home directory.
+{
+  const homeDir = dirname(home)
+  const probe = join(homeDir, '.dsh-write-probe')
+  let problem
+  try {
+    const st = statSync(homeDir)
+    if (st.uid !== process.getuid()) problem = `owned by uid ${st.uid}, but DSH runs as uid ${process.getuid()}`
+    else if ((st.mode & 0o200) === 0) problem = `mode ${(st.mode & 0o7777).toString(8)} has no owner write bit`
+    else {
+      mkdirSync(probe)
+      rmdirSync(probe)
+    }
+  } catch (error) {
+    problem = problem ?? `${error.code}: ${error.message}`
+  }
+  if (problem === undefined) console.log(`ok   g0 home-writable  ${homeDir} is writable by uid ${process.getuid()}`)
+  else {
+    console.log(`FAIL g0 home-writable  ${homeDir}: ${problem}`)
+    console.log(`       fix: chown ${process.getuid()}:${process.getgid()} ${homeDir} && chmod 700 ${homeDir}`)
+    failures++
+  }
+}
 
 // --- code gates --------------------------------------------------------------
 gate('g1 flock', 'native flock addon degrades on android', 'node-addon-system/lib/flock.js', "platform === 'android'")

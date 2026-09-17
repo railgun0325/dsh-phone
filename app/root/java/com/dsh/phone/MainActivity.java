@@ -185,6 +185,12 @@ public class MainActivity extends WizardActivity {
         if (copy.code != 0) {
             throw new Exception("payload 拷贝进 Termux 失败：\n" + copy.out);
         }
+        // `cp -r <stage>/. $HOME/` may apply the staging directory's own attributes to
+        // $HOME (ownership/mode), depending on the cp implementation. If that happens
+        // the Termux uid becomes "other" for its own home and every file the agent
+        // creates fails with EACCES — reported as "cannot create ...: mkdir". Put the
+        // home back in shape right after the copy.
+        ShRoot.exec("chown " + uid + ":" + uid + " " + HOME + " && chmod 700 " + HOME, 15000);
         log("payload 已就位");
     }
 
