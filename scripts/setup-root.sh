@@ -84,6 +84,21 @@ EOF
   fi
   echo "SCOPE_DIR=$SCOPE_DIR"
 
+  echo "[step] ensure the Termux home is owned by this uid with mode 700"
+  # A payload copy written as another uid (adb shell = 2000, root = 0) can leave $HOME
+  # owned by that uid with a group/other mode. The Termux uid is then "other": every
+  # create inside the home fails with EACCES, which the UI reports as
+  # "cannot create <path>: EACCES ... mkdir". Not root, not SELinux — plain DAC.
+  if [ "$(stat -c %u "$HOME")" != "$(id -u)" ] || [ "$(stat -c %a "$HOME")" != "700" ]; then
+    if su -c "chown $(id -u):$(id -g) $HOME && chmod 700 $HOME" 2>/dev/null; then
+      echo "[ok] 已修正 $HOME 的属主/权限（was $(stat -c %u:%g\ %a "$HOME")）"
+    else
+      echo "[warn] 无法修正 $HOME 属主/权限（需要 root）"
+    fi
+  else
+    echo "[skip] $HOME 属主/权限正常"
+  fi
+
   echo "[step] patch koffi statx for Android"
   KOFFI_CC="$MODROOT/koffi/lib/native/base/base.cc"
   if [ -f "$KOFFI_CC" ] && ! grep -q 'ANDROID' "$KOFFI_CC"; then
