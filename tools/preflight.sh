@@ -87,6 +87,20 @@ echo "$payload" | grep -q 'verify-patched-tree.mjs' \
   || { note FAIL "payload: verify-patched-tree.mjs is not shipped (no post-deploy gate check)"; fail=1; }
 [ "$fail" = 0 ] && note ok "payload complete ($(echo "$payload" | wc -l | tr -d ' ') files)"
 
+# --- 1b. commit subject hygiene ---------------------------------------------
+# GitHub prints each file's newest commit subject next to the filename, so an
+# overlong subject becomes the repo's front page. Details belong in the body.
+subject=$(git log -1 --format=%s 2>/dev/null || true)
+if [ -n "$subject" ]; then
+  len=$(node -e 'process.stdout.write(String(process.argv[1].length))' "$subject")
+  if [ "$len" -gt 72 ]; then
+    note FAIL "commit: subject is $len chars (limit 72): $subject"
+    fail=1
+  else
+    note ok "commit subject is $len chars (limit 72)"
+  fi
+fi
+
 # --- 6. no script may use the attribute-clobbering copy shape ----------------
 # `cp -a src/. dst/` applies the SOURCE directory's ownership/mode to dst. Staging a
 # payload from /data/local/tmp (shell:shell) or a root-owned dir into the Termux home
