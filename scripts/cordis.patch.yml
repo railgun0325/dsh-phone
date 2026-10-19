@@ -1,8 +1,8 @@
-- id: hmr
+- id: client-hmr
   disabled: true
 - id: bash-sandbox
   disabled: true
-- id: sandbox
+- id: pwsh-sandbox
   disabled: true
 - id: permission
   disabled: true

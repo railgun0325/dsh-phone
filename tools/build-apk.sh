@@ -41,9 +41,9 @@ if [ "$FLAVOR" = root ]; then
   # that ships a stale patcher silently re-introduces the bug it was written to fix
   # (v0.2.6 shipped patch-dsh-link.mjs without its `rename` import — see
   # docs/TROUBLESHOOTING.md, gate 7).
-  PAYLOAD="setup-root.sh start-dsh.sh boot-dsh.sh dsh-watchdog.sh dns-fwd.mjs \
+  PAYLOAD="setup-root.sh root-install-selinux.sh configure-android-profile.mjs apply-android-patches.mjs dsh-compat.mjs patch-utils.mjs verify-android-runtime.mjs start-dsh.sh boot-dsh.sh dsh-watchdog.sh dns-fwd.mjs \
 patch-dsh.mjs patch-dsh-link.mjs patch-dsh-client-modules.mjs patch-dsh-web-auth.mjs \
-patch-dsh-flock-android.mjs patch-dsh-presets.mjs patch-dsh-attachment-fsync.mjs upgrade-to-015.sh verify-turn.mjs verify-patched-tree.mjs \
+patch-dsh-flock-android.mjs patch-dsh-presets.mjs patch-dsh-attachment-fsync.mjs verify-turn.mjs verify-patched-tree.mjs \
 install-api-key.sh cordis.patch.yml"
 else
   [ -s "$ASSETS/shizuku.apk" ] || { echo "missing asset shizuku.apk" >&2; exit 2; }
@@ -51,7 +51,7 @@ else
     [ -s "$ASSETS/$a" ] || { echo "missing asset $a — run tools/fetch-assets.sh" >&2; exit 2; }
   done
   cp "$ASSETS/shizuku.apk" "$OUT/assets/"
-  PAYLOAD="setup-shizuku.sh start-dsh.sh boot-dsh-shizuku.sh \
+  PAYLOAD="setup-shizuku.sh dsh-compat.mjs patch-utils.mjs start-dsh.sh boot-dsh-shizuku.sh \
 patch-dsh.mjs patch-dsh-link.mjs patch-dsh-client-modules.mjs patch-dsh-web-auth.mjs \
 patch-dsh-flock-android.mjs patch-dsh-presets.mjs patch-dsh-attachment-fsync.mjs verify-turn.mjs verify-patched-tree.mjs cordis.patch.yml"
 fi

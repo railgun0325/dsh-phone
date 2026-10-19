@@ -74,8 +74,18 @@ public class MainActivity extends WizardActivity {
         log("部署将给 Termux:API 授予相机/麦克风/定位等硬件权限（系统隐私指示灯全程可见，逐项结果见下方 setup 日志）…");
 
         log("写入 payload 到 /data/local/tmp/dsh-stage…");
+        prepareTermuxHome(uid);
+        ShRoot.Result identity = ShRoot.execAs(uid, "id && cat /proc/self/attr/current", 15000);
+        if (identity.code != 0) throw new Exception("无法进入 Termux 应用身份：\n" + identity.out);
+        log("Termux 应用身份：" + identity.out.trim());
         transferPayload(payload, uid);
 
+        log("暂停旧 DSH web 和 watchdog，准备更新（DNS 转发继续运行）…");
+        ShRoot.Result stop = ShRoot.exec(
+            "pkill -TERM -f '[/]data/adb/service.d/dsh-watchdog[.]sh' 2>/dev/null || true; "
+                + "pkill -TERM -u " + uid + " -f '[/]dsh/lib/bin[.]js web' 2>/dev/null || true", 15000);
+        if (stop.code != 0) throw new Exception("暂停旧服务失败：\n" + stop.out);
+        Thread.sleep(1500);
         log("开始安装 DSH（首次需联网下载依赖，可能耗时数分钟）…");
         String escKey = shq(apiKey);
         ShRoot.Result setup = ShRoot.execAs(uid,
@@ -148,9 +158,21 @@ public class MainActivity extends WizardActivity {
     }
 
     private boolean shReady(String uid) {
-        ShRoot.Result r = ShRoot.execAs(uid,
+        ShRoot.Result r = ShRoot.exec(
             "test -x /data/data/com.termux/files/usr/bin/sh && echo READY", 10000);
         return r.out.contains("READY");
+    }
+
+    private void prepareTermuxHome(String uid) throws Exception {
+        // Only this directory is repaired here. Never recursively relabel the
+        // Termux prefix, and never invent MCS categories from a different app.
+        String cmd = "test ! -L " + HOME + " && test -d " + HOME
+            + " && context=$(ls -Zd /data/data/com.termux | awk '{print $1}')"
+            + " && case \"$context\" in u:object_r:app_data_file:s0:c*) ;; *) exit 1 ;; esac"
+            + " && chown " + uid + ":" + uid + " " + HOME + " && chmod 700 " + HOME
+            + " && chcon \"$context\" " + HOME;
+        ShRoot.Result r = ShRoot.exec(cmd, 15000);
+        if (r.code != 0) throw new Exception("无法从 Termux 应用目录取得完整 SELinux 标签；已停止部署：\n" + r.out);
     }
 
     private void initTermux(String uid) throws Exception {
@@ -172,25 +194,30 @@ public class MainActivity extends WizardActivity {
     }
 
     private void transferPayload(File payload, String uid) throws Exception {
+        String stagePath = "/data/local/tmp/dsh-stage-" + uid + "-" + System.nanoTime();
         ShRoot.Result stage = ShRoot.exec(
-            "rm -rf /data/local/tmp/dsh-stage && mkdir -p /data/local/tmp/dsh-stage && cp -r "
-                + shq(payload.getAbsolutePath()) + "/. /data/local/tmp/dsh-stage/ && chmod -R 755 /data/local/tmp/dsh-stage",
+            "mkdir -m 755 " + stagePath + " && cp -r "
+                + shq(payload.getAbsolutePath()) + "/. " + stagePath + "/ && chmod -R 755 " + stagePath,
             30000);
         if (stage.code != 0) {
             throw new Exception("写入中转目录失败：\n" + stage.out);
         }
+        // Repair old payload destinations before app-context cp can overwrite
+        // them. Execute the trusted helper from the freshly extracted stage.
+        ShRoot.Result repair = ShRoot.exec("sh " + stagePath + "/root-install-selinux.sh " + uid + " " + uid, 120000);
+        if (repair.code != 0) {
+            ShRoot.exec("rm -rf " + stagePath, 15000);
+            throw new Exception("旧部署文件标签修复失败：\n" + repair.out);
+        }
         ShRoot.Result copy = ShRoot.execAs(uid,
-            "cp -r /data/local/tmp/dsh-stage/. " + HOME + "/ && chmod 700 " + HOME + "/*.sh && chmod 700 " + HOME + "/*.mjs",
+            "export PATH=" + PREFIX + "/bin:/system/bin; export LD_LIBRARY_PATH=" + PREFIX + "/lib; "
+                + "for entry in " + stagePath + "/*; do cp -R --no-preserve=all \"$entry\" " + HOME + "/ || exit 1; done; "
+                + "chmod 700 " + HOME + "/*.sh " + HOME + "/*.mjs",
             30000);
+        ShRoot.exec("rm -rf " + stagePath, 15000);
         if (copy.code != 0) {
             throw new Exception("payload 拷贝进 Termux 失败：\n" + copy.out);
         }
-        // `cp -r <stage>/. $HOME/` may apply the staging directory's own attributes to
-        // $HOME (ownership/mode), depending on the cp implementation. If that happens
-        // the Termux uid becomes "other" for its own home and every file the agent
-        // creates fails with EACCES — reported as "cannot create ...: mkdir". Put the
-        // home back in shape right after the copy.
-        ShRoot.exec("chown " + uid + ":" + uid + " " + HOME + " && chmod 700 " + HOME, 15000);
         log("payload 已就位");
     }
 

@@ -1,0 +1,82 @@
+{
+  "registry": "https://registry.npmjs.org",
+  "packages": [
+    {
+      "name": "@deepseek-ai/dsh-attachment-local",
+      "version": "0.2.0-rc.1",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh-attachment-local/-/dsh-attachment-local-0.2.0-rc.1.tgz",
+      "integrity": "sha512-MljH+R0ma2uBi7gOGXo6mzVzGDI8ZS24c24O8VXV6dQoh4MSkBiKRux/7W0kyKxz0fmHv7rtZPJehNIW3xAaUw==",
+      "sha256": "ff631d9c662197766eb8c68901034b630069d42599592d922a907e75da9aac03"
+    },
+    {
+      "name": "@deepseek-ai/dsh-attachment-local",
+      "version": "0.2.0-rc.2",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh-attachment-local/-/dsh-attachment-local-0.2.0-rc.2.tgz",
+      "integrity": "sha512-VDyHGvKoN59D+3t3rwkZYNFJJJ1PbCV/6z9ngL5lErd1H98NqmFqFzGgGypGPvBGdmi42ckhVldBPq8ZJWzKcA==",
+      "sha256": "f48538ce6c23e9d3466769a2da79bfefe2c514c51c3d44f61efe909aaf80cbcf"
+    },
+    {
+      "name": "@deepseek-ai/dsh-client-connection",
+      "version": "0.2.0-rc.1",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh-client-connection/-/dsh-client-connection-0.2.0-rc.1.tgz",
+      "integrity": "sha512-aMZvpoyryBUYpqIBxaC8+nYWcwluSCegIU5JIuKnWMyaZLNvMC187ZPm7Bbpvy3pR2hnfWqJaFkl2XQodGfGCA==",
+      "sha256": "fdfdf5e5c4c3a3e03c4a7d079cbd0f74afd57dba5dba501ad662e6f9bedaa359"
+    },
+    {
+      "name": "@deepseek-ai/dsh-client-connection",
+      "version": "0.2.0-rc.2",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh-client-connection/-/dsh-client-connection-0.2.0-rc.2.tgz",
+      "integrity": "sha512-eL66YSZ0+HlWRzAPGU8jtCLd322WXBoMGN1g1OsM5T7Skqbbo9hSwV1FO3Lm0IcMZR3Y07sGPQBwZwf/l66T3w==",
+      "sha256": "536ec548c42af452b5f5d518f4ae0f1c0c992d5f183a460544bf3329f7b2e70b"
+    },
+    {
+      "name": "@deepseek-ai/dsh-client-modules",
+      "version": "0.2.0-rc.1",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh-client-modules/-/dsh-client-modules-0.2.0-rc.1.tgz",
+      "integrity": "sha512-XvPOXcpz1bYU/uwRICpQRKL8mUHfcbUiLQiiXgi76H/eS5K7LNIHCSGzvmWk2IdCK7tPi4GP33lHAprrsAXCUw==",
+      "sha256": "25bae7a9ac00cb83ad4e78b3210aa521801c93a82f927f6de64e396b330a94cb"
+    },
+    {
+      "name": "@deepseek-ai/dsh-client-modules",
+      "version": "0.2.0-rc.2",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh-client-modules/-/dsh-client-modules-0.2.0-rc.2.tgz",
+      "integrity": "sha512-eDF7dycEl8QJ8CAZTSTz+dZh2PFHsf/ESAsjWjhcHxueLji7LF8/MY54PgU051Ho0V7zQKCAAeFWK2/GyIpgIg==",
+      "sha256": "2f9f886b115ebcc11e662c0eed1c091ddb25d9a45fc35eef8799f48b4cb3f621"
+    },
+    {
+      "name": "@deepseek-ai/dsh-session-persistence-jsonl",
+      "version": "0.2.0-rc.1",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh-session-persistence-jsonl/-/dsh-session-persistence-jsonl-0.2.0-rc.1.tgz",
+      "integrity": "sha512-16hp5zx1Q1SIVJfQI/hrxASHMkE/r+pHeELn1b/GZCpKwCD1nwiQapqHhgq/+WEb9SRvRpWAxE5dQWEscZghEw==",
+      "sha256": "5f26f58226db1c8b9fabb21121176360826cc0b8f9ecc183ae5c78ca89e12ade"
+    },
+    {
+      "name": "@deepseek-ai/dsh-session-persistence-jsonl",
+      "version": "0.2.0-rc.2",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh-session-persistence-jsonl/-/dsh-session-persistence-jsonl-0.2.0-rc.2.tgz",
+      "integrity": "sha512-iAzXWC8jmiLYjK+wuN/fAKXLniAfClWm0CmEIwSxZnJGVy8c0iy7j5v8UfOqUbwuGfqo5HUWfyLGgxbWH7SG3g==",
+      "sha256": "f5650bef896ef852dc5e5599aae5a0066b295c36674b9e4032c3c1d1e40bb7c8"
+    },
+    {
+      "name": "@deepseek-ai/dsh-subprocess-local",
+      "version": "0.2.0-rc.1",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh-subprocess-local/-/dsh-subprocess-local-0.2.0-rc.1.tgz",
+      "integrity": "sha512-rO0VCIPqEk6A47rlVZxvHXXaoQ2MS8pW5yhXpb3+hqc/2NQA33ZOMViqeDeVyyBlhLTxn7p972kETEB1EhEZfw==",
+      "sha256": "3bfabfdb8091e0540ccaf3d352566048151e8c89f0551e2019cf3eaf9d96146a"
+    },
+    {
+      "name": "@deepseek-ai/dsh-subprocess-local",
+      "version": "0.2.0-rc.2",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh-subprocess-local/-/dsh-subprocess-local-0.2.0-rc.2.tgz",
+      "integrity": "sha512-RKEhReGv6bAOHNeMd9kBwY1mQSuhm0OEiK+wnXkOD8CvesYaYXNUmtoIf9VJdrRhG5DF35gVNQAN79Si9d/BHw==",
+      "sha256": "97e0ff8d96689a660a883b755f857fc8693d9114eadeb73694ef5e708eb0cc21"
+    },
+    {
+      "name": "@deepseek-ai/node-addon-system",
+      "version": "0.1.2",
+      "tarball": "https://registry.npmjs.org/@deepseek-ai/node-addon-system/-/node-addon-system-0.1.2.tgz",
+      "integrity": "sha512-EFn8K+mXIXiw6s3rxX+cgp2hZTEAQdVIsURhrXnBxycSXvtQ1EQpsSVzoNKtKAQI0I0VqkEcVEjHzS/PeaGsvw==",
+      "sha256": "347a0bb0cb1ea1af6eb88f2b72eb3ee41cc7703093971e6b2a58fee19191c36e"
+    }
+  ]
+}

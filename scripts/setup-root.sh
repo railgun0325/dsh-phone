@@ -9,148 +9,126 @@ export TERMUX_APP_PACKAGE=com.termux
 export PATH=$PREFIX/bin:$PREFIX/bin/applets:/system/bin:/system/xbin
 export LD_LIBRARY_PATH=$PREFIX/lib
 
-: > "$HOME/setup-dsh.log"
-set -eo pipefail
+set -Eeuo pipefail
+umask 077
+# UID switching alone does not enter the Termux SELinux app domain. Refuse
+# before creating logs/npm files when the caller is still in su/shell context.
+if [ "$(id -u)" = 0 ]; then
+  echo "[error] Run this script in ordinary Termux, not a root shell."
+  exit 1
+fi
+PROCESS_CONTEXT=$(cat /proc/self/attr/current)
+REFERENCE_CONTEXT=$(stat -c %C /data/data/com.termux)
+case "$PROCESS_CONTEXT" in
+  u:r:untrusted_app*:s0:c*|u:r:runas_app:s0:c*) ;;
+  *) echo "[error] Installer remains in an unsafe SELinux domain ($PROCESS_CONTEXT). Open ordinary Termux and run bash ~/setup-root.sh."; exit 1 ;;
+esac
+case "$REFERENCE_CONTEXT" in u:object_r:app_data_file:s0:c*) ;; *) echo "[error] missing trusted Termux MCS reference"; exit 1;; esac
+[ "${PROCESS_CONTEXT#*:s0:}" = "${REFERENCE_CONTEXT#*:s0:}" ] || { echo "[error] process/Termux MCS categories differ"; exit 1; }
+[ -f "$HOME/root-install-selinux.sh" ] || { echo "[error] missing root-install-selinux.sh payload"; exit 1; }
+# Repair only existing managed log/lock paths before opening them. Full package
+# repair waits for the installer lock, so concurrent installs never mutate trees.
+su -c "sh '$HOME/root-install-selinux.sh' '$(id -u)' '$(id -g)' bootstrap"
+mkdir -p "$HOME/.dsh-install-logs"
+LOG="$HOME/.dsh-install-logs/setup-$(date +%Y%m%d-%H%M%S)-$$.log"
+exec > >(tee -a "$LOG" "$HOME/setup-dsh.log") 2>&1
+trap 'rc=$?; echo "[error] setup failed at line $LINENO (status $rc); log: $LOG"; exit "$rc"' ERR
 {
-  # Fast path: a previous run completed (marker) and node+DSH are still there
-  # -> skip apt/npm downloads entirely (seconds instead of minutes).
-  FAST=""
-  if [ -f "$HOME/.dsh-setup-ok" ] && [ -x "$PREFIX/bin/node" ]      && [ -f "$PREFIX/lib/node_modules/@deepseek-ai/dsh/package.json" ]; then
-    FAST=1
-    echo "[fast] 环境已就绪，跳过 apt/npm 下载（强制重装请删除 ~/.dsh-setup-ok）"
-  fi
-
-  if [ -z "$FAST" ]; then
-  echo "[step] write TUNA apt source"
-  cat > "$PREFIX/etc/apt/sources.list" << 'EOF'
-# TUNA mirror (Termux main repo)
-deb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main
-EOF
-
-  echo "[step] apt-get update"
-  apt-get update
-
-  echo "[step] install base packages"
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confold nodejs-lts git python clang make binutils openssl curl wget termux-api
-
-  echo "[step] node/npm versions"
-  node -v
-  npm -v
-
-  echo "[step] npm retry hardening"
-  npm config set fetch-retries 5
-  npm config set fetch-retry-mintimeout 20000
-  npm config set fetch-retry-maxtimeout 120000
-
-  echo "[step] install DSH (ignore scripts; native modules patched later; registry fallback chain)"
-  # npmmirror -> Huawei Cloud -> official npmjs. VPN fake-ip / flaky WiFi proofing.
-  DSH_INSTALLED=""
-  for REG in https://registry.npmmirror.com https://repo.huaweicloud.com/repository/npm/ https://registry.npmjs.org; do
-    echo "[step] trying registry: $REG"
-    if npm install -g --ignore-scripts --registry "$REG" @deepseek-ai/dsh@latest; then
-      npm config set registry "$REG"
-      DSH_INSTALLED=1
-      break
-    fi
-    echo "[fallback] registry $REG failed — patching koffi if present, then trying next"
-    KOFFI_CC="$(npm root -g)/@deepseek-ai/dsh/node_modules/koffi/lib/native/base/base.cc"
-    if [ -f "$KOFFI_CC" ] && ! grep -q 'ANDROID' "$KOFFI_CC"; then
-      sed -i 's/#if defined(__linux__)/#if defined(__linux__) && !defined(__ANDROID__)/' "$KOFFI_CC"
-    fi
-  done
-  if [ -z "$DSH_INSTALLED" ]; then
-    echo "[error] all npm registries failed; aborting"
+  command -v flock >/dev/null || apt-get install -y util-linux
+  exec 9>"$HOME/.dsh-install.lock"
+  flock --exclusive --nonblock 9 || { echo "[error] another DSH installer holds the installation lock"; exit 1; }
+  rm -f "$HOME/.dsh-setup-ok"
+  # Never replace modules beneath a serving web process. Stop its watchdog first
+  # in the app, then stop web; this script deliberately does not kill processes.
+  if pgrep -f '[/]bin[.]js web([[:space:]]|$)' >/dev/null || curl -sf -o /dev/null --max-time 2 http://127.0.0.1:3080/; then
+    echo "[error] DSH web is running. Stop web and its watchdog before installing, then rerun."
     exit 1
   fi
-  fi  # end fast-skip
-
-  DSH_DIR="$(npm root -g)/@deepseek-ai/dsh"
-  echo "DSH_DIR=$DSH_DIR"
-
-  # The dependency copies live in one of two places, and the patches below must not
-  # assume either one:
-  #   * a normal `npm install -g` nests them at $DSH_DIR/node_modules/@deepseek-ai;
-  #   * an install that is a path symlink into a hand-built/pnpm tree (what
-  #     scripts/upgrade-to-015.sh produces) keeps the launcher inside the project's
-  #     node_modules, so its siblings are the packages. Assuming the nested path
-  #     there aborts the whole deploy with ENOENT on the first patch.
-  DSH_REAL=$(readlink -f "$DSH_DIR")
-  if [ -d "$DSH_REAL/node_modules/@deepseek-ai" ]; then
-    SCOPE_DIR="$DSH_REAL/node_modules/@deepseek-ai"
-    MODROOT="$DSH_REAL/node_modules"
-  else
-    SCOPE_DIR="$(dirname "$DSH_REAL")"
-    MODROOT="$(dirname "$SCOPE_DIR")"
+  # su/execAs may have created unreadable :s0 files. Repair before reading even
+  # package.json, not merely before npm mutates the existing tree.
+  [ -f "$HOME/root-install-selinux.sh" ] || { echo "[error] missing root-install-selinux.sh payload"; exit 1; }
+  su -c "sh '$HOME/root-install-selinux.sh' '$(id -u)' '$(id -g)'"
+  # Keep the user's apt sources and npm configuration unchanged.
+  if ! command -v node >/dev/null || ! command -v npm >/dev/null; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confold nodejs-lts
   fi
-  echo "SCOPE_DIR=$SCOPE_DIR"
-
-  echo "[step] ensure the Termux home is owned by this uid with mode 700"
-  # A payload copy written as another uid (adb shell = 2000, root = 0) can leave $HOME
-  # owned by that uid with a group/other mode. The Termux uid is then "other": every
-  # create inside the home fails with EACCES, which the UI reports as
-  # "cannot create <path>: EACCES ... mkdir". Not root, not SELinux — plain DAC.
-  if [ "$(stat -c %u "$HOME")" != "$(id -u)" ] || [ "$(stat -c %a "$HOME")" != "700" ]; then
-    if su -c "chown $(id -u):$(id -g) $HOME && chmod 700 $HOME" 2>/dev/null; then
-      echo "[ok] 已修正 $HOME 的属主/权限（was $(stat -c %u:%g\ %a "$HOME")）"
-    else
-      echo "[warn] 无法修正 $HOME 属主/权限（需要 root）"
+  command -v curl >/dev/null || apt-get install -y curl
+  command -v python >/dev/null || apt-get install -y python
+  command -v termux-camera-photo >/dev/null || apt-get install -y termux-api
+  node -v
+  npm -v
+  node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 12)) { console.error("[error] DSH requires Node >=22.12; upgrade Termux nodejs-lts first"); process.exit(1); }'
+  DSH_DIR="$PREFIX/lib/node_modules/@deepseek-ai/dsh"
+  INSTALLED=""
+  if [ -f "$DSH_DIR/package.json" ]; then
+    INSTALLED=$(node -p 'require(process.argv[1]).version' "$DSH_DIR/package.json")
+  fi
+  DSH_VERSION="${DSH_VERSION:-${INSTALLED:-0.2.0-rc.2}}"
+  case "$DSH_VERSION" in
+    0.2.0-rc.1|0.2.0-rc.2) ;;
+    *) echo "[error] DSH $DSH_VERSION has not been validated. Set DSH_VERSION to an explicitly supported 0.2.0 build."; exit 1 ;;
+  esac
+  export npm_config_cache="$HOME/.cache/dsh-phone-npm"
+  DSH_NPM_REGISTRY="${DSH_NPM_REGISTRY:-https://registry.npmjs.org}"
+  case "$DSH_NPM_REGISTRY" in https://*) ;; *) echo "[error] DSH_NPM_REGISTRY must use HTTPS"; exit 1;; esac
+  case "${DSH_REINSTALL:-0}" in 0|1) ;; *) echo "[error] DSH_REINSTALL must be 0 or 1"; exit 1;; esac
+  if [ "$INSTALLED" != "$DSH_VERSION" ] || [ "${DSH_REINSTALL:-0}" = 1 ]; then
+    BACKUP=""
+    if [ -n "$INSTALLED" ]; then
+      mkdir -p "$HOME/.dsh-install-backups"
+      BACKUP="$HOME/.dsh-install-backups/dsh-$INSTALLED-$(date +%Y%m%d-%H%M%S)-$$"
+      # Move only the validated ordinary global package tree. Retain a pristine
+      # retry route for legacy destructive patches, without changing user data.
+      mv "$DSH_DIR" "$BACKUP"
+      echo "[backup] previous DSH tree retained at $BACKUP"
+    fi
+    echo "[step] install exact DSH $DSH_VERSION (lifecycle scripts disabled)"
+    if ! npm install -g --ignore-scripts --registry "$DSH_NPM_REGISTRY" --fetch-retries=5 "@deepseek-ai/dsh@$DSH_VERSION"; then
+      if [ -n "$BACKUP" ]; then
+        [ ! -e "$DSH_DIR" ] || mv "$DSH_DIR" "$BACKUP.failed-install"
+        mv "$BACKUP" "$DSH_DIR"
+        echo "[restore] previous package restored; partial install kept beside backup"
+      fi
+      echo "[error] npm installation failed; fix the reported error and rerun. Log: $LOG"
+      exit 1
     fi
   else
-    echo "[skip] $HOME 属主/权限正常"
+    echo "[resume] using installed DSH $INSTALLED (DSH_REINSTALL=1 requests a backed-up clean reinstall)"
   fi
+  su -c "sh '$HOME/root-install-selinux.sh' '$(id -u)' '$(id -g)'"
+  [ "$(node -p 'require(process.argv[1]).version' "$DSH_DIR/package.json")" = "$DSH_VERSION" ]
 
-  echo "[step] patch koffi statx for Android"
-  KOFFI_CC="$MODROOT/koffi/lib/native/base/base.cc"
-  if [ -f "$KOFFI_CC" ] && ! grep -q 'ANDROID' "$KOFFI_CC"; then
-    sed -i 's/#if defined(__linux__)/#if defined(__linux__) && !defined(__ANDROID__)/' "$KOFFI_CC"
-    echo "[ok] koffi patched"
+  # Root deployment manages only the ordinary global npm tree. The repair helper
+  # rejects symlinked/pnpm install roots rather than relabelling their targets.
+  DSH_REAL="$DSH_DIR"
+  SCOPE_DIR="$DSH_DIR/node_modules/@deepseek-ai"
+  MODROOT="$DSH_DIR/node_modules"
+  [ -d "$SCOPE_DIR" ] || { echo "[error] unsupported DSH dependency layout: $SCOPE_DIR"; exit 1; }
+  echo "SCOPE_DIR=$SCOPE_DIR"
+
+  echo "[step] sharp WASM matching the installed sharp package"
+  SHARP_VERSION=$(node -p 'require(process.argv[1]).version' "$MODROOT/sharp/package.json")
+  WASM_VERSION=""
+  if [ -f "$MODROOT/@img/sharp-wasm32/package.json" ]; then
+    WASM_VERSION=$(node -p 'require(process.argv[1]).version' "$MODROOT/@img/sharp-wasm32/package.json")
+  fi
+  if [ "$WASM_VERSION" != "$SHARP_VERSION" ]; then
+    (cd "$DSH_REAL" && npm install --ignore-scripts --omit=dev --registry "$DSH_NPM_REGISTRY" --no-save --package-lock=false "@img/sharp-wasm32@$SHARP_VERSION")
   else
-    echo "[skip] koffi patch (already applied or file missing)"
+    echo "[resume] sharp-wasm32 $WASM_VERSION already installed"
   fi
-
-  echo "[step] sharp wasm fallback"
-  if [ -z "$FAST" ]; then
-    cd "$DSH_DIR"
-    npm install @img/sharp-wasm32 --no-save 2>/dev/null || echo "[warn] sharp-wasm32 skipped"
-  else
-    echo "[skip] sharp wasm (fast path, already installed)"
-  fi
-
-  echo "[step] patch node-pty lazy load"
-  if [ -f "$SCOPE_DIR/dsh-subprocess-local/lib/index.js" ]; then
-    node "$HOME/patch-dsh.mjs" "$SCOPE_DIR/dsh-subprocess-local/lib/index.js"
-  else
-    echo "[warn] dsh-subprocess-local 不存在 —— 跳过"
-  fi
-
-  echo "[step] patch session/attachment publish (link -> rename, Android SELinux denies link)"
-  node "$HOME/patch-dsh-link.mjs" "$SCOPE_DIR"
-
-  echo "[step] patch client-modules composer (phone-sized CPU; 0.1.5+ only)"
-  # 0.1.5 synthesises a per-line identity source map per module and recomposes every
-  # client bundle on every plugin registration. On a phone that never converges
-  # (measured: 225s of CPU, UI never renders); this degrades the map to an empty one
-  # and debounces the flush.
-  node "$HOME/patch-dsh-client-modules.mjs" "$SCOPE_DIR/dsh-client-modules/lib/index.js" || \
-    echo "[warn] client-modules 补丁未生效（目标缺失，或该版本锚点已变）"
-
-  echo "[step] patch web auth (loopback stays token-free; 0.1.5+ only)"
-  # 0.1.5 gates the UI and /api behind a per-process launch token. The shell WebView
-  # cannot pass it, so loopback would answer 401 forever. LAN still needs the token.
-  node "$HOME/patch-dsh-web-auth.mjs" "$SCOPE_DIR/dsh-client-connection/lib/index.js" || \
-    echo "[warn] web-auth 补丁未生效（目标缺失，或该版本锚点已变）"
-
-  echo "[step] patch attachment store durability walk (Android: /data/data and / are not fsync-able)"
-  # dsh-attachment-local fsyncs every ancestor directory of the store up to the
-  # filesystem root: open('/data/data') is EACCES for every app uid and fsync('/')
-  # is EINVAL on this kernel, so saving ANY image or file aborts and the prompt is
-  # rejected with a reason that never mentions attachments.
-  if [ -f "$HOME/patch-dsh-attachment-fsync.mjs" ]; then
-    node "$HOME/patch-dsh-attachment-fsync.mjs" "$SCOPE_DIR/dsh-attachment-local/lib/index.js" || \
-      echo "[warn] attachment-local 补丁未生效（目标缺失，或该版本锚点已变）"
-  else
-    echo "[warn] payload 里没有 patch-dsh-attachment-fsync.mjs（旧 APK？）"
-  fi
+  su -c "sh '$HOME/root-install-selinux.sh' '$(id -u)' '$(id -g)'"
+  # Do real image work: resolving the package alone does not prove WASM loads.
+  (cd "$DSH_REAL" && node --input-type=module -e '
+    import { createRequire } from "node:module";
+    const require = createRequire(process.cwd() + "/package.json");
+    const sharp = require("sharp");
+    await sharp({create:{width:1,height:1,channels:4,background:"#fff"}}).png().toBuffer();
+    console.log("[ok] sharp image encode");
+  ')
+  echo "[step] apply all required version-aware Android patches"
+  node "$HOME/apply-android-patches.mjs" "$DSH_DIR"
 
   echo "[step] check llm-deepseek model catalog declares image input"
   # A user-level `llm-deepseek.models` list REPLACES the shipped catalog, and the
@@ -167,47 +145,9 @@ EOF
     fi
   fi
 
-  echo "[step] patch flock native module (Android app uids have no flock(2))"
-  # 0.1.5 takes a cross-process lock through @deepseek-ai/node-addon-system on every
-  # durable session write. On Android the addon throws ERR_FLOCK_UNSUPPORTED_PLATFORM,
-  # so the session log is never written and the turn dies silently right after
-  # session/prompt answers accepted:true (looks like "nothing happens", not an error).
-  if [ -f "$HOME/patch-dsh-flock-android.mjs" ]; then
-    node "$HOME/patch-dsh-flock-android.mjs" "$SCOPE_DIR/node-addon-system/lib/flock.js" || \
-      echo "[warn] node-addon-system/flock.js not present — skipped"
-  else
-    echo "[warn] payload 里没有 patch-dsh-flock-android.mjs（旧 APK？）"
-  fi
-
-  echo "[step] convert user Agent presets to the 0.1.5 persona key"
-  # 0.1.5's @deepseek-ai/dsh-persona made the prompt key required and renamed it
-  # text -> prefix. A preset still saying `text` fails to mount, and every session
-  # created from it refuses to start (`$.prefix missing required value`).
-  if [ -f "$HOME/patch-dsh-presets.mjs" ] && [ -d "$HOME/.dsh/.agent-presets" ]; then
-    node "$HOME/patch-dsh-presets.mjs" "$HOME/.dsh/.agent-presets" || echo "[warn] preset conversion failed"
-  elif [ -f "$HOME/patch-dsh-presets.mjs" ]; then
-    echo "[skip] 还没有用户预设目录"
-  else
-    echo "[warn] payload 里没有 patch-dsh-presets.mjs（旧 APK？）"
-  fi
-
-  echo "[step] dsh-mnemon version floor (0.1.5 needs >= 0.5)"
-  # dsh-mnemon < 0.5 against 0.1.5 throws
-  # "Cannot read properties of undefined (reading 'filter')" from the turn-stopping
-  # hook: the model has already answered, so it shows up as an error on a good reply.
-  MNEMON_PKG="$HOME/.dsh/profiles/web/node_modules/dsh-mnemon/package.json"
-  if [ -f "$MNEMON_PKG" ]; then
-    MNEMON_V=$(node -e "process.stdout.write(require('$MNEMON_PKG').version)" 2>/dev/null || echo "")
-    case "$MNEMON_V" in
-      0.[0-4].*|"")
-        echo "[fix] dsh-mnemon $MNEMON_V -> 0.5.10"
-        ( cd "$HOME/.dsh/profiles/web" && pnpm add dsh-mnemon@0.5.10 --reporter=append-only ) || \
-          echo "[warn] pnpm add dsh-mnemon 失败（网络？）—— 0.1.5 下每轮收尾会报错"
-        ;;
-      *) echo "[skip] dsh-mnemon $MNEMON_V 已满足" ;;
-    esac
-  else
-    echo "[skip] web profile 里没装 dsh-mnemon"
+  if [ -d "$HOME/.dsh/.agent-presets" ]; then
+    cp -a "$HOME/.dsh/.agent-presets" "$HOME/.dsh/.agent-presets.backup-$(date +%Y%m%d-%H%M%S)-$$"
+    node "$HOME/patch-dsh-presets.mjs" "$HOME/.dsh/.agent-presets"
   fi
 
   echo "[step] register dsh-android-control plugin"
@@ -220,7 +160,8 @@ EOF
 
   echo "[step] write web profile cordis patch"
   mkdir -p "$HOME/.dsh/profiles/web"
-  install -m 644 "$HOME/cordis.patch.yml" "$HOME/.dsh/profiles/web/cordis.patch.yml"
+  PROFILE_PATCH="$HOME/.dsh/profiles/web/cordis.patch.yml"
+  node "$HOME/configure-android-profile.mjs" "$DSH_DIR" "$PROFILE_PATCH" "$HOME/cordis.patch.yml"
 
   echo "[step] install dsh-watchdog (root: keeps dns-fwd and dsh web alive)"
   # Without it a dead dns-fwd leaves the :53 redirect pointing at nothing and the
@@ -245,11 +186,11 @@ EOF
   fi
 
   echo "[step] write API key"
-  if [ -n "$DEEPSEEK_API_KEY" ] && printf '%s' "$DEEPSEEK_API_KEY" | grep -Eq '^sk-[A-Za-z0-9_-]+$'; then
+  if [ -n "${DEEPSEEK_API_KEY:-}" ] && printf '%s' "$DEEPSEEK_API_KEY" | grep -Eq '^sk-[A-Za-z0-9_-]+$'; then
     printf '%s' "$DEEPSEEK_API_KEY" > "$HOME/.dsh-api-key"
     chmod 600 "$HOME/.dsh-api-key"
     echo "[ok] API key saved to ~/.dsh-api-key (chmod 600)"
-  elif [ -n "$DEEPSEEK_API_KEY" ]; then
+  elif [ -n "${DEEPSEEK_API_KEY:-}" ]; then
     echo "[error] DEEPSEEK_API_KEY 格式非法（应为 sk- 开头的纯文本，不含换行）；未写入"
     exit 1
   else
@@ -282,32 +223,29 @@ EOF
     echo "[warn] 电池豁免失败: com.termux.api（MIUI 可能冻结 Termux:API，建议到设置里允许后台无限制）"
   fi
 
-  echo "[step] record launcher alias"
-  cat > "$HOME/.bashrc" << 'EOF'
-alias dsh='node --expose-internals $(npm root -g)/@deepseek-ai/dsh/lib/bin.js'
-EOF
-
-  echo "[step] verify every Android gate patch is present in the installed tree"
-  # Gate list + what each marker means: docs/ANDROID-GATES.md. This is the check that
-  # turns "the deploy said OK" into "the tree the device runs is actually patched".
-  if [ -f "$HOME/verify-patched-tree.mjs" ]; then
-    node "$HOME/verify-patched-tree.mjs" "$HOME/.dsh" "$DSH_DIR" || \
-      echo "[warn] 有关卡没关上 —— 见上面的 FAIL 行与 docs/ANDROID-GATES.md"
-  else
-    echo "[warn] payload 里没有 verify-patched-tree.mjs（旧 APK？）"
+  echo "[step] record launcher alias without replacing shell configuration"
+  ALIAS_LINE="alias dsh='node --expose-internals \$(npm root -g)/@deepseek-ai/dsh/lib/bin.js'"
+  if ! grep -Fqx "$ALIAS_LINE" "$HOME/.bashrc" 2>/dev/null; then
+    [ ! -f "$HOME/.bashrc" ] || cp -p "$HOME/.bashrc" "$HOME/.bashrc.backup-$(date +%Y%m%d-%H%M%S)-$$"
+    printf '\n%s\n' "$ALIAS_LINE" >> "$HOME/.bashrc"
   fi
+  su -c "sh '$HOME/root-install-selinux.sh' '$(id -u)' '$(id -g)'"
+  echo "[step] verify every required Android patch and plugin"
+  node "$HOME/verify-patched-tree.mjs" "$HOME/.dsh" "$DSH_DIR"
+  node "$HOME/verify-android-runtime.mjs" "$DSH_DIR"
+  # Check the CLI boots without a network request or disclosing credentials.
+  node --expose-internals "$DSH_DIR/lib/bin.js" --version
 
   echo "[step] verify one real turn over the live web API"
   # Advisory only: the wizard may not have started dsh web yet. A green VERIFY_OK is
   # the only proof that the whole chain (patches + presets + mnemon) actually works;
   # run it by hand any time with: node ~/verify-turn.mjs 3080 ~
   if [ -f "$HOME/verify-turn.mjs" ] && curl -sf -o /dev/null --max-time 3 http://127.0.0.1:3080/ 2>/dev/null; then
-    timeout -s KILL 180 node "$HOME/verify-turn.mjs" 3080 "$HOME" || \
-      echo "[warn] 轮次验收失败 —— 见 docs/UPGRADE-0.1.5.md 第四节"
+    timeout -s KILL 180 node "$HOME/verify-turn.mjs" 3080 "$HOME"
   else
     echo "[skip] dsh web 未运行；部署完可在 App 里执行 node ~/verify-turn.mjs 3080 ~ 自检"
   fi
 
   touch "$HOME/.dsh-setup-ok"
   echo "SETUP OK"
-} 2>&1 | tee -a "$HOME/setup-dsh.log"
+}

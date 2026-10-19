@@ -1,0 +1,31 @@
+name: DSH 0.2 Android compatibility
+on:
+  push:
+    branches: [codex/dsh-0.2-android-compat]
+  pull_request:
+    paths: ['scripts/**', 'plugin/**', 'tests/**', '.github/workflows/dsh-compat.yml']
+  workflow_dispatch:
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dsh: [0.2.0-rc.1, 0.2.0-rc.2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Repository preflight
+        run: bash tools/preflight.sh
+      - name: Install actual npm package without lifecycle scripts
+        run: npm install --prefix "$RUNNER_TEMP/dsh" --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org "@deepseek-ai/dsh@${{ matrix.dsh }}"
+      - name: Patch, kernel contracts, profile, web and API regression
+        env:
+          DSH_INSTALL: ${{ runner.temp }}/dsh/node_modules/@deepseek-ai/dsh
+          DSH_PATCH_SCOPE: ${{ runner.temp }}/dsh/node_modules/@deepseek-ai
+        run: node --test tests/*.test.mjs
+      - name: Installer decisions and SELinux path boundary tests
+        run: |
+          python3 tests/root-install-setup.py
+          python3 tests/root-install-selinux.py

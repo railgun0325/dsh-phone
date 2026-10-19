@@ -19,7 +19,8 @@
 // identitySectionMap 23 s — and the web UI never rendered.
 //
 // Idempotent. Usage: node patch-dsh-client-modules.mjs <path to dsh-client-modules/lib/index.js>
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
+import { savePatches } from './patch-utils.mjs'
 
 const target = process.argv[2]
 if (!target) {
@@ -57,7 +58,7 @@ const mapReplacement = [
 if (src.includes(mapAnchor)) {
   src = src.replace(mapAnchor, mapReplacement)
   changed++
-} else if (!src.includes('devtools-only data')) {
+} else if (!src.includes(mapReplacement)) {
   console.error('source-map anchor not found — is this the right file/build?')
   process.exit(1)
 }
@@ -101,7 +102,7 @@ if (src.includes(flushAnchor)) {
   }
   src = src.replace(closeAnchor, closeReplacement)
   changed++
-} else if (!src.includes('debounce the burst')) {
+} else if ((!src.includes(flushReplacement) || !src.includes('}, 150);'))) {
   console.error('flush anchor not found — is this the right file/build?')
   process.exit(1)
 }
@@ -110,6 +111,5 @@ if (changed === 0) {
   console.log('already patched — nothing to do')
   process.exit(0)
 }
-writeFileSync(target, src)
+savePatches([[target, src]])
 console.log(`patched (${changed} edit group(s)): ` + target)
-

@@ -7,6 +7,16 @@ export TMPDIR=$PREFIX/tmp
 export TERMUX_APP_PACKAGE=com.termux
 export PATH=$PREFIX/bin:/system/bin:/system/xbin
 export LD_LIBRARY_PATH=$PREFIX/lib
+[ -f "$HOME/.dsh-setup-ok" ] || { echo "DSH setup has not passed; run setup-root.sh first"; exit 1; }
+# Keep a shared lease for this server's lifetime. The installer takes the
+# exclusive lease; watchdog/boot cannot launch a new server while it patches.
+if [ -f "$HOME/root-install-selinux.sh" ]; then
+  exec 9>"$HOME/.dsh-install.lock"
+  if ! flock --shared --nonblock 9; then
+    echo "DSH install is in progress; startup deferred"
+    exit 1
+  fi
+fi
 if [ -f "$HOME/.dsh-api-key" ]; then
   export DEEPSEEK_API_KEY="$(cat "$HOME/.dsh-api-key")"
 fi
@@ -26,4 +36,4 @@ exec > "$HOME/dsh-web.log" 2>&1
 # EADDRINUSE while the old process keeps serving deleted plugin files.
 pkill -f 'bin.js web' 2>/dev/null
 sleep 1
-exec /data/data/com.termux/files/usr/bin/node --expose-internals /data/data/com.termux/files/usr/lib/node_modules/@deepseek-ai/dsh/lib/bin.js web
+exec /data/data/com.termux/files/usr/bin/node --expose-internals /data/data/com.termux/files/usr/lib/node_modules/@deepseek-ai/dsh/lib/bin.js web --host 127.0.0.1 --port 3080 --no-open

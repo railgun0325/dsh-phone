@@ -114,8 +114,13 @@ dns_rules_del() {
 start_dsh() {
   uid=$(stat -c %u /data/data/com.termux 2>/dev/null)
   case "$uid" in ''|*[!0-9]*) log "dsh: cannot resolve Termux uid — skip"; return 1 ;; esac
-  # Run as the Termux uid: dsh web must not create root-owned files in $THOME.
-  setsid su "$uid" -c "$PREFIX/bin/bash $THOME/start-dsh.sh" >/dev/null 2>&1 </dev/null &
+  # run-as applies Termux's SELinux MCS as well as its UID. su UID alone
+  # reintroduces category-less :s0 files on every watchdog restart.
+  if ! run-as com.termux /system/bin/sh -c "test \"\$(id -u)\" = $uid"; then
+    log "dsh: run-as unavailable; start from ordinary Termux (see UPGRADE-0.2.0.md)"
+    return 1
+  fi
+  setsid run-as com.termux /system/bin/sh -c "$PREFIX/bin/bash $THOME/start-dsh.sh" >>"$LOG" 2>&1 </dev/null &
   return 0
 }
 

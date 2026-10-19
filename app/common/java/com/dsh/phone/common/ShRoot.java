@@ -50,11 +50,23 @@ public final class ShRoot {
             : run(new String[]{"su", "-c", cmd}, timeoutMs);
     }
 
-    /** Run cmd through su as the given numeric uid (e.g. the Termux app uid). */
+    /** Enter Termux's app identity, including its SELinux MCS categories.
+     * Changing only the Linux uid through su leaves the su SELinux domain in
+     * place; files it creates may receive app_data_file:s0 without categories.
+     * The bundled debug Termux supports run-as, which applies Android's seapp
+     * context. Release Termux must use its own terminal rather than this path.
+     */
     public static Result execAs(String uid, String cmd, int timeoutMs) {
-        return useMountMaster()
-            ? run(new String[]{"su", "--mount-master", uid, "-c", cmd}, timeoutMs)
-            : run(new String[]{"su", uid, "-c", cmd}, timeoutMs);
+        if (!uid.matches("[0-9]+")) return new Result(1, "Invalid Termux uid");
+        String inner = "test \"$(id -u)\" = " + uid + " || exit 1; " + cmd;
+        String quoted = "'" + inner.replace("'", "'\\''") + "'";
+        Result result = exec("run-as com.termux /system/bin/sh -c " + quoted, timeoutMs);
+        if (result.code != 0 && (result.out.contains("not debuggable")
+                || result.out.contains("unknown package") || result.out.contains("Could not set capabilities"))) {
+            return new Result(result.code, result.out
+                + "\n当前 Termux 不支持安全的 run-as 执行；请在普通 Termux 终端按 docs/UPGRADE-0.2.0.md 安装。不要用 su UID 运行 npm。");
+        }
+        return result;
     }
 
     /**
