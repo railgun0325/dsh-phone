@@ -16,7 +16,7 @@ Install one APK → paste your API key → tap once. Everything deploys automati
 <img src="https://img.shields.io/github/v/release/railgun0325/dsh-phone?label=Latest%20Release" alt="Latest release">
 <img src="https://img.shields.io/badge/Android-11%2B-green.svg" alt="Android 11+">
 <img src="https://img.shields.io/badge/Android%20Tools-28-4d6bfe.svg" alt="28 android tools">
-<img src="https://img.shields.io/badge/DeepSeek%20Harness-compatible-4d6bfe.svg" alt="DeepSeek Harness compatible">
+<img src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.1--rc.2-4d6bfe.svg" alt="DeepSeek Harness 0.2.1-rc.2">
 
 </div>
 

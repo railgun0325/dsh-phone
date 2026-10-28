@@ -2,10 +2,13 @@
   disabled: true
 - id: bash-sandbox
   disabled: true
-- id: sandbox
-  disabled: true
 - id: permission
   disabled: true
+# `sandbox` MUST stay enabled: dsh-ptc-runtime-node injects it, and the preset's
+# workflow-ptc engine injects ptcRuntime. Disabling it left both pending, so every
+# new session waited forever for the workflow engine ("waiting for workflow engine").
+# The bash tool does not inject `sandbox` (it injects `shell`), which is why
+# disabling `bash-sandbox` and mounting `bash-local` below is enough on a phone.
 - insert:
     - id: bash-local
       name: '@deepseek-ai/dsh-bash-local'

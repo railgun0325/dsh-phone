@@ -8,6 +8,8 @@ export TMPDIR=$PREFIX/tmp
 export TERMUX_APP_PACKAGE=com.termux
 export PATH=$PREFIX/bin:$PREFIX/bin/applets:/system/bin:/system/xbin
 export LD_LIBRARY_PATH=$PREFIX/lib
+# Pinned: the patches in scripts/ target this build, not whatever npm calls latest.
+DSH_VERSION="${DSH_VERSION:-0.2.1-rc.2}"
 exec > "$HOME/setup-dsh.log" 2>&1
 set -e
 echo "[step] apt-get update (via proxy)"
@@ -26,9 +28,9 @@ git config --global https.proxy http://127.0.0.1:8119
 echo "[step] install pnpm"
 npm install -g pnpm@11.7.0 2>/dev/null || npm install -g pnpm 2>/dev/null || echo "[warn] pnpm skipped"
 echo "[step] install DSH from npm"
-npm install -g @deepseek-ai/dsh@latest || {
+npm install -g "@deepseek-ai/dsh@$DSH_VERSION" || {
   echo "[fallback] retry DSH with --ignore-scripts (native modules are patched out anyway)"
-  npm install -g --ignore-scripts @deepseek-ai/dsh@latest
+  npm install -g --ignore-scripts "@deepseek-ai/dsh@$DSH_VERSION"
 }
 DSH_DIR="$(npm root -g)/@deepseek-ai/dsh"
 echo "DSH_DIR=$DSH_DIR"

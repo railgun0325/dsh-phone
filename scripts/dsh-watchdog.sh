@@ -63,6 +63,14 @@ port_state() {
   return 1
 }
 
+# Does the phone's own resolver answer? Modern Android serves DNS from netd on
+# 127.0.0.1:53, so a healthy phone must not be "repaired": binding 0.0.0.0:53 and
+# DNAT-ing every :53 packet breaks tethering (netd cannot install the tether DNS
+# forwarders, EREMOTEIO 121) and the hotspot closes itself seconds after starting.
+dns_works() {
+  timeout 6 "$NODE" -e 'require("node:dns").lookup("www.baidu.com", (e) => process.exit(e ? 1 : 0))' >/dev/null 2>&1
+}
+
 dns_up() { port_state "$DNS_HEX" 07 || port_state "$DNS_HEX" 0A; }
 dsh_up() { port_state "$DSH_HEX" 0A; }
 
@@ -115,7 +123,11 @@ start_dsh() {
   uid=$(stat -c %u /data/data/com.termux 2>/dev/null)
   case "$uid" in ''|*[!0-9]*) log "dsh: cannot resolve Termux uid — skip"; return 1 ;; esac
   # Run as the Termux uid: dsh web must not create root-owned files in $THOME.
-  setsid su "$uid" -c "$PREFIX/bin/bash $THOME/start-dsh.sh" >/dev/null 2>&1 </dev/null &
+  # `cd $THOME` first: this loop's own cwd is /data/adb/service.d, and dsh loads a
+  # .env from the launch directory — that one is root-600, so every boot logged
+  # "failed to load .env: EACCES". Starting from the Termux home also keeps the
+  # default workspace what the user expects.
+  setsid su "$uid" -c "cd $THOME && exec $PREFIX/bin/bash $THOME/start-dsh.sh" >/dev/null 2>&1 </dev/null &
   return 0
 }
 
@@ -128,8 +140,16 @@ last_dsh_start=0
 cycle() {
   cycle_no=$((cycle_no + 1))
 
-  # 1. DNS forwarder + its redirect
-  if dns_up; then
+  # 1. DNS forwarder + its redirect — only while the phone's own resolver is broken
+  if dns_works; then
+    dns_fails=0
+    probe_fails=0
+    if dns_rules_present; then
+      dns_rules_del
+      log "dns: system resolver healthy — removed the :53 redirect"
+    fi
+    pkill -f dns-fwd.mjs 2>/dev/null
+  elif dns_up; then
     dns_fails=0
     dns_rules_present || { dns_rules_add; log "dns: forwarder up, redirect restored"; }
     if [ $((cycle_no % PROBE_EVERY)) -eq 0 ] && ! dns_functional; then

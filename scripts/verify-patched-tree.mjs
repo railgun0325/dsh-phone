@@ -15,7 +15,7 @@
 //
 // usage: node verify-patched-tree.mjs [DSH_HOME]      (default ~/.dsh)
 //        exit 0 = every gate closed, 1 = at least one FAIL
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 const home = process.argv[2] ?? join(process.env.HOME ?? '/data/data/com.termux/files/home', '.dsh')
@@ -91,7 +91,7 @@ gate(
   'g2 session-publish',
   'atomic publish uses rename and imports it (revision 1 shipped it unimported)',
   'dsh-session-persistence-jsonl/lib/index.js',
-  /import \{[^}]*\brealpath, rename, rm\b[^}]*\} from "node:fs\/promises"/,
+  /import \{[^}]*\brename\b[^}]*\} from "node:fs\/promises"/,
   'regex',
 )
 gate(
@@ -102,7 +102,79 @@ gate(
 )
 gate('g4 client-modules', 'client bundle composer debounced', 'dsh-client-modules/lib/index.js', 'debounce the burst')
 gate('g5 web-auth', 'loopback UI does not need the launch token', 'dsh-client-connection/lib/index.js', 'loopbackAuthority')
-gate('g6 node-pty', 'node-pty loaded lazily', 'dsh-subprocess-local/lib/index.js', 'loadNodePty')
+
+// --- g6: node-pty must not be loaded statically -----------------------------
+// The gate is the capability, not this repo's rewrite: 0.2.1-rc.2 reaches node-pty
+// through createLazyRequire() upstream, so the patched form (`loadNodePty`) and the
+// upstream form both close it. What must never ship is the static import, which makes
+// the whole subprocess seam fail to mount on Android before a single turn can start.
+{
+  const file = join(scope, 'dsh-subprocess-local/lib/index.js')
+  if (!existsSync(file)) {
+    console.log(`FAIL g6 node-pty  missing file: ${file}`)
+    failures++
+  } else {
+    const src = readFileSync(file, 'utf8')
+    const lazy = /createLazyRequire\(["']node-pty["']|requireNodePty|loadNodePty/.test(src)
+    const staticImport = /^\s*import \* as nodePty from ["']node-pty["'];?$/m.test(src)
+    if (lazy && !staticImport) console.log('ok   g6 node-pty  node-pty is loaded lazily')
+    else {
+      console.log(`FAIL g6 node-pty  ${file} still mounts node-pty eagerly (lazy=${lazy}, static import=${staticImport})`)
+      failures++
+    }
+  }
+}
+
+// --- g14: the require-builtin addon must be able to degrade -----------------
+// 0.2.x loads Node internals through node-addon-require-builtin. It publishes prebuilds
+// for darwin/linux-{gnu,musl} only, so on Android the module threw from its own body and
+// `dsh web` died before binding 3080 ("等待 dsh 服务"). Fresh 0.1.x installs have no such
+// package: skip, do not fail.
+{
+  const addon = join(scope, '..', 'node-addon-require-builtin', 'lib', 'index.js')
+  if (!existsSync(addon)) console.log('skip g14 require-builtin  this DSH build does not use the addon')
+  else {
+    const src = readFileSync(addon, 'utf8')
+    if (src.includes('expose-internals fallback')) console.log('ok   g14 require-builtin  addon falls back to --expose-internals require')
+    else {
+      console.log(`FAIL g14 require-builtin  ${addon} still throws when no prebuilt binding matches (Android has none)`)
+      failures++
+    }
+  }
+}
+
+// --- g15: profile wiring that only 0.2.x exposes -----------------------------
+// Two traps cost a debugging session each on 2026-10-28:
+//   * disabling the `sandbox` row leaves dsh-ptc-runtime-node and the preset's
+//     workflow-ptc engine pending, so every new session waits forever for the
+//     workflow engine ("waiting for workflow engine");
+//   * a symlinked plugin in the profile's node_modules is treated as a link
+//     projection, dropped on the next settings write, and once dangling it kills
+//     the boot with EACCES on realpath.
+{
+  const profilePatch = join(home, 'profiles', 'web', 'cordis.patch.yml')
+  if (existsSync(profilePatch)) {
+    const src = readFileSync(profilePatch, 'utf8')
+    if (/^\s*-\s*id:\s*sandbox\s*$/m.test(src) && /^\s*disabled:\s*true\s*$/m.test(src.slice(src.search(/^\s*-\s*id:\s*sandbox\s*$/m)))) {
+      console.log('FAIL g15 profile  cordis.patch.yml disables the sandbox row — sessions wait for the workflow engine')
+      failures++
+    } else console.log('ok   g15 profile  sandbox row left enabled (workflow engine can activate)')
+  } else {
+    console.log('skip g15 profile  no profile cordis.patch.yml yet')
+  }
+
+  const pluginDir = join(home, 'profiles', 'web', 'node_modules', 'dsh-android-control')
+  if (!existsSync(pluginDir)) {
+    console.log(`FAIL g15 plugin  ${pluginDir} is missing — the android-control row cannot resolve`)
+    failures++
+  } else if (lstatSync(pluginDir).isSymbolicLink()) {
+    console.log(`FAIL g15 plugin  ${pluginDir} is a symlink — 0.2.x drops link projections; copy the package instead`)
+    failures++
+  } else if (!existsSync(join(pluginDir, 'index.js')) || !existsSync(join(pluginDir, 'package.json'))) {
+    console.log(`FAIL g15 plugin  ${pluginDir} is incomplete (index.js / package.json missing)`)
+    failures++
+  } else console.log('ok   g15 plugin  android-control is a real package inside the profile')
+}
 
 // --- config gates ------------------------------------------------------------
 const presetDir = join(home, '.agent-presets')

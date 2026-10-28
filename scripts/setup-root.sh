@@ -9,6 +9,11 @@ export TERMUX_APP_PACKAGE=com.termux
 export PATH=$PREFIX/bin:$PREFIX/bin/applets:/system/bin:/system/xbin
 export LD_LIBRARY_PATH=$PREFIX/lib
 
+# Pinned DSH release. The patch scripts in this APK are verified against exactly
+# this build; `@latest` is what broke the v0.2.11 deploy once npm's latest moved
+# to 0.2.x and every anchor missed. Bump this line together with the patches.
+DSH_VERSION="${DSH_VERSION:-0.2.1-rc.2}"
+
 : > "$HOME/setup-dsh.log"
 set -eo pipefail
 {
@@ -16,8 +21,16 @@ set -eo pipefail
   # -> skip apt/npm downloads entirely (seconds instead of minutes).
   FAST=""
   if [ -f "$HOME/.dsh-setup-ok" ] && [ -x "$PREFIX/bin/node" ]      && [ -f "$PREFIX/lib/node_modules/@deepseek-ai/dsh/package.json" ]; then
-    FAST=1
-    echo "[fast] 环境已就绪，跳过 apt/npm 下载（强制重装请删除 ~/.dsh-setup-ok）"
+    # The marker alone is not enough: a phone deployed by an older APK carries an
+    # older DSH, whose patch anchors do not match this payload. Compare the
+    # installed version with the pinned one and fall back to a real install.
+    INSTALLED_V=$(node -p "require('$PREFIX/lib/node_modules/@deepseek-ai/dsh/package.json').version" 2>/dev/null || echo unknown)
+    if [ "$INSTALLED_V" = "$DSH_VERSION" ]; then
+      FAST=1
+      echo "[fast] 环境已就绪（DSH $INSTALLED_V），跳过 apt/npm 下载（强制重装请删除 ~/.dsh-setup-ok）"
+    else
+      echo "[step] 已装 DSH $INSTALLED_V ≠ 锁定版本 $DSH_VERSION，按锁定版本重装"
+    fi
   fi
 
   if [ -z "$FAST" ]; then
@@ -42,12 +55,12 @@ EOF
   npm config set fetch-retry-mintimeout 20000
   npm config set fetch-retry-maxtimeout 120000
 
-  echo "[step] install DSH (ignore scripts; native modules patched later; registry fallback chain)"
+  echo "[step] install DSH $DSH_VERSION (ignore scripts; native modules patched later; registry fallback chain)"
   # npmmirror -> Huawei Cloud -> official npmjs. VPN fake-ip / flaky WiFi proofing.
   DSH_INSTALLED=""
   for REG in https://registry.npmmirror.com https://repo.huaweicloud.com/repository/npm/ https://registry.npmjs.org; do
     echo "[step] trying registry: $REG"
-    if npm install -g --ignore-scripts --registry "$REG" @deepseek-ai/dsh@latest; then
+    if npm install -g --ignore-scripts --registry "$REG" "@deepseek-ai/dsh@$DSH_VERSION"; then
       npm config set registry "$REG"
       DSH_INSTALLED=1
       break
@@ -66,6 +79,7 @@ EOF
 
   DSH_DIR="$(npm root -g)/@deepseek-ai/dsh"
   echo "DSH_DIR=$DSH_DIR"
+  echo "DSH_VERSION_INSTALLED=$(node -p "require('$DSH_DIR/package.json').version" 2>/dev/null || echo unknown)"
 
   # The dependency copies live in one of two places, and the patches below must not
   # assume either one:
@@ -117,10 +131,28 @@ EOF
   fi
 
   echo "[step] patch node-pty lazy load"
+  # 0.2.1-rc.2 loads node-pty through createLazyRequire() upstream, so the patcher
+  # reports "not needed" and exits 0. A miss is not fatal here: gate g6 in
+  # verify-patched-tree.mjs fails at the end if node-pty still ends up mounted
+  # eagerly, which is the condition that actually breaks Android.
   if [ -f "$SCOPE_DIR/dsh-subprocess-local/lib/index.js" ]; then
-    node "$HOME/patch-dsh.mjs" "$SCOPE_DIR/dsh-subprocess-local/lib/index.js"
+    node "$HOME/patch-dsh.mjs" "$SCOPE_DIR/dsh-subprocess-local/lib/index.js" || \
+      echo "[warn] node-pty 补丁未生效（目标缺失，或该版本锚点已变）—— 继续，末尾关卡会复核"
   else
     echo "[warn] dsh-subprocess-local 不存在 —— 跳过"
+  fi
+
+  echo "[step] patch require-builtin native addon (0.2.x on Android has no prebuild)"
+  # 0.2.x's dsh-app-boot reaches Node internals through node-addon-require-builtin, which
+  # ships prebuilds only for darwin/linux-gnu/linux-musl. On bionic nothing loads and the
+  # module threw at require() time, so `dsh web` died before binding 3080 and the shell sat
+  # on "等待 dsh 服务". The patch keeps the native binding when present and otherwise uses
+  # the --expose-internals require the consumers already try first.
+  if [ -f "$HOME/patch-dsh-require-builtin.mjs" ]; then
+    node "$HOME/patch-dsh-require-builtin.mjs" "$MODROOT/node-addon-require-builtin/lib/index.js" || \
+      echo "[warn] require-builtin 补丁未生效（目标缺失，或该包版本已变）—— 继续，末尾关卡会复核"
+  else
+    echo "[warn] patch-dsh-require-builtin.mjs 缺失（旧 APK？）"
   fi
 
   echo "[step] patch session/attachment publish (link -> rename, Android SELinux denies link)"
@@ -215,8 +247,15 @@ EOF
   mkdir -p "$PLUGIN_DIR/lib"
   install -m 644 "$HOME/plugin/index.js" "$HOME/plugin/package.json" "$HOME/plugin/cordis.patch.yml" "$PLUGIN_DIR/"
   install -m 644 "$HOME/plugin/lib/client.js" "$PLUGIN_DIR/lib/"
-  mkdir -p "$HOME/.dsh/profiles/web/node_modules"
-  ln -sfn "$PLUGIN_DIR" "$HOME/.dsh/profiles/web/node_modules/dsh-android-control"
+  # 0.2.x: the profile's node_modules entry must be a REAL directory. A symlink out of
+  # the profile is treated as a "link projection": the profile reconciler drops it on
+  # the next settings write, and once it is dangling every boot dies in realpath with
+  # EACCES. Copy the package in instead; Node resolves it from the profile as usual.
+  PROFILE_MODULES="$HOME/.dsh/profiles/web/node_modules"
+  mkdir -p "$PROFILE_MODULES"
+  rm -rf "$PROFILE_MODULES/dsh-android-control"
+  cp -R "$PLUGIN_DIR" "$PROFILE_MODULES/dsh-android-control"
+  chmod -R u+rwX "$PROFILE_MODULES/dsh-android-control"
 
   echo "[step] write web profile cordis patch"
   mkdir -p "$HOME/.dsh/profiles/web"
@@ -287,14 +326,21 @@ EOF
 alias dsh='node --expose-internals $(npm root -g)/@deepseek-ai/dsh/lib/bin.js'
 EOF
 
+  # Marker before the gate check: the environment is complete at this point, so a
+  # re-run must take the fast path and re-check the gates instead of re-downloading.
+  touch "$HOME/.dsh-setup-ok"
+  echo "[ok] 部署标记已写入：下次点「一键部署」走快速路径，只复核关卡"
+
   echo "[step] verify every Android gate patch is present in the installed tree"
-  # Gate list + what each marker means: docs/ANDROID-GATES.md. This is the check that
-  # turns "the deploy said OK" into "the tree the device runs is actually patched".
+  # Gate list and what each marker means: docs/ANDROID-GATES.md. This is the check
+  # that turns "the deploy said OK" into "the tree the phone runs is actually
+  # patched". It runs last so a failure never costs the key or plugin setup.
+  GATES_OK=1
   if [ -f "$HOME/verify-patched-tree.mjs" ]; then
-    node "$HOME/verify-patched-tree.mjs" "$HOME/.dsh" "$DSH_DIR" || \
-      echo "[warn] 有关卡没关上 —— 见上面的 FAIL 行与 docs/ANDROID-GATES.md"
+    DSH_INSTALL="$DSH_DIR" node "$HOME/verify-patched-tree.mjs" "$HOME/.dsh" || GATES_OK=0
   else
     echo "[warn] payload 里没有 verify-patched-tree.mjs（旧 APK？）"
+    GATES_OK=0
   fi
 
   echo "[step] verify one real turn over the live web API"
@@ -308,6 +354,11 @@ EOF
     echo "[skip] dsh web 未运行；部署完可在 App 里执行 node ~/verify-turn.mjs 3080 ~ 自检"
   fi
 
-  touch "$HOME/.dsh-setup-ok"
-  echo "SETUP OK"
+  if [ "$GATES_OK" = 1 ]; then
+    echo "SETUP OK"
+  else
+    echo "[error] 有关卡没关上（见上面 FAIL 行与 docs/ANDROID-GATES.md）。"
+    echo "[error] 环境与 Key 都已就位，修好后在 Termux 里执行 bash ~/setup-root.sh 即可只复核关卡"
+    exit 1
+  fi
 } 2>&1 | tee -a "$HOME/setup-dsh.log"
